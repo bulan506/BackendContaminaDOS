@@ -1,0 +1,82 @@
+# Ignorar archivos y carpetas de compilación en cualquier nivel
+**/bin/
+**/obj/
+**/Debug/
+
+# Archivos de Visual Studio
+**/.vs/
+**/*.user
+**/*.userosscache
+**/*.sln.docstates
+
+# Archivos de configuración local
+**/*.env
+
+# Archivos de caché de Rider
+**/.idea/
+
+# Archivos de usuario de Visual Studio Code
+**/.vscode/
+
+# Archivos temporales de Windows
+**/Thumbs.db
+**/ehthumbs.db
+
+# Carpeta de paquetes NuGet
+**/packages/
+
+# Archivos de registro
+**/*.log
+
+# Archivos de respaldo
+**/*~
+**/*.bak
+
+# Archivos de publicación
+**/*.pubxml
+**/*.publishproj
+
+# Archivos de configuración de usuario
+**/*.suo
+**/*.user
+**/*.userosscache
+**/*.sln.docstates
+
+# Archivos de caché de Roslyn
+**/*.ide/
+
+# Archivos específicos de .NET Core
+**/project.lock.json
+**/project.fragment.lock.json
+**/artifacts/
+
+# Archivos de caché de StyleCop
+**/StyleCopReport.xml
+
+# Archivos generados por Visual Studio
+**/*_i.c
+**/*_p.c
+**/*_h.h
+**/*.ilk
+**/*.meta
+**/*.obj
+**/*.iobj
+**/*.pch
+**/*.pdb
+**/*.ipdb
+**/*.pgc
+**/*.pgd
+**/*.rsp
+**/*.sbr
+**/*.tlb
+**/*.tli
+**/*.tlh
+**/*.tmp
+**/*.tmp_proj
+**/*_wpftmp.csproj
+**/*.vspscc
+**/*.vssscc
+**/.builds
+**/*.pidb
+**/*.svclog
+**/*.scc

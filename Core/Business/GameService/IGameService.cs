@@ -9,9 +9,9 @@ public interface IGameService
     SRoundsResponse GetRoundDetail(string gameId, string roundId, string player, string password);
     ResponseGameId GetGameById(string gameId, string player, string password);
     SRoundsResponse GetRoundById(string gameId, string roundId);
-    bool HasGroupAlreadyProposed(string roundId, string phase);
-    void AddGroupRound(GroupRound groupRound);
-    void UpdateRound(DataRounds round);
+  //  bool HasGroupAlreadyProposed(string roundId, string phase);
+    SRoundsResponse AddGroupRound(GroupRound groupRound);
+    SRoundsResponse UpdateRound(DataRounds round);
     SRoundsResponse ProposeGroup(string gameId, string roundId, GroupRequest groupRequest, string password, string player);
 
 }

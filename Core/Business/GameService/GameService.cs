@@ -126,44 +126,103 @@ namespace Core.Models.Business
         }
 
         // Agregar los nuevos métodos
-        public void AddGroupRound(GroupRound groupRound)
-        {
-            if (groupRound == null)
-                throw new ArgumentNullException(nameof(groupRound));
+                public SRoundsResponse AddGroupRound(GroupRound groupRound)
+                {
+                    if (groupRound == null)
+                    {
+                        return new SRoundsResponse
+                        {
+                            status = 400, // Bad Request
+                            msg = "Invalid GroupRound object",
+                            data = null
+                        };
+                    }
 
-            // Verificar que existan las referencias
-            var game = _gamesCollection.Find(g => g.GameId == groupRound.gameId).FirstOrDefault();
-            var round = _roundsCollection.Find(r => r.id == groupRound.roundId).FirstOrDefault();
-            var player = game?.Players.FirstOrDefault(p => p.PlayerName == groupRound.playerId);
+                    // Verificar que existan las referencias
+                    var game = _gamesCollection.Find(g => g.GameId == groupRound.gameId).FirstOrDefault();
+                    var round = _roundsCollection.Find(r => r.id == groupRound.roundId).FirstOrDefault();
+                    var player = game?.Players.FirstOrDefault(p => p.PlayerName == groupRound.playerId);
 
-            if (game == null || round == null || player == null)
-            {
-                throw new InvalidOperationException("Invalid references in GroupRound");
-            }
+                    // Manejar la ausencia de referencias válidas
+                    if (game == null || round == null || player == null)
+                    {
+                        return new SRoundsResponse
+                        {
+                            status = 409, // Conflict
+                            msg = "Invalid references in GroupRound",
+                            data = null
+                        };
+                    }
 
-            // Asignar las referencias virtuales
-            groupRound.game = game;
-            groupRound.round = round;
-            groupRound.player = player;
+                    // Asignar las referencias virtuales
+                    groupRound.game = game;
+                    groupRound.round = round;
+                    groupRound.player = player;
 
-            _groupRoundsCollection.InsertOne(groupRound);
-        }
+                    try
+                    {
+                        _groupRoundsCollection.InsertOne(groupRound);
+                        return new SRoundsResponse
+                        {
+                            status = 201, // Created
+                            msg = "GroupRound added successfully",
+                            data = null
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        return new SRoundsResponse
+                        {
+                            status = 500, // Internal Server Error
+                            msg = "An error occurred while adding the GroupRound",
+                            data = null,
+                            others = new List<ErrorDetail>
+                            {
+                                new ErrorDetail { status = 500, msg = ex.Message }
+                            }
+                        };
+                    }
+                }
 
-        public void UpdateRound(DataRounds round)
-        {
-            if (round == null)
-                throw new ArgumentNullException(nameof(round));
+                public SRoundsResponse UpdateRound(DataRounds round)
+                {
+                    if (round == null)
+                    {
+                        return new SRoundsResponse
+                        {
+                            status = 400, // Bad Request
+                            msg = "Invalid round object",
+                            data = null
+                        };
+                    }
 
-            var filter = Builders<Round>.Filter.Eq(r => r.id, round.id);
-            var update = Builders<Round>.Update
-                .Set(r => r.status, round.status)
-                .Set(r => r.updatedAt, round.updatedAt)
-                .Set(r => r.group, round.group)
-                .Set(r => r.votes, round.votes);
+                    var filter = Builders<Round>.Filter.Eq(r => r.id, round.id);
+                    var update = Builders<Round>.Update
+                        .Set(r => r.status, round.status)
+                        .Set(r => r.updatedAt, round.updatedAt)
+                        .Set(r => r.group, round.group)
+                        .Set(r => r.votes, round.votes);
 
-            _roundsCollection.UpdateOne(filter, update);
-        }
+                    var result = _roundsCollection.UpdateOne(filter, update);
 
+                    // Verifica si se ha actualizado alguna ronda
+                    if (result.MatchedCount == 0)
+                    {
+                        return new SRoundsResponse
+                        {
+                            status = 404, // No encontrado
+                            msg = "Round not found",
+                            data = null
+                        };
+                    }
+
+                    return new SRoundsResponse
+                    {
+                        status = 200, // OK
+                        msg = "Round updated successfully",
+                        data = round // Puedes devolver la ronda actualizada
+                    };
+                }
 
         public ResponseStart StartGame(string gameId, string player, string password)
         {
@@ -481,7 +540,7 @@ namespace Core.Models.Business
             };
         }
 
-        public bool HasGroupAlreadyProposed(string roundId, string phase)
+        private bool HasGroupAlreadyProposed(string roundId, string phase)
         {
             // Verificar si ya se ha propuesto un grupo en esa fase
             return _groupRoundsCollection

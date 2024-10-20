@@ -7,5 +7,11 @@ public interface IGameService
     ResponseStart StartGame(string gameId, string player, string password);
     RoundsResponse GetRounds(string gameId, string player, string password);
     SRoundsResponse GetRoundDetail(string gameId, string roundId, string player, string password);
+    ResponseGameId GetGameById(string gameId, string player, string password);
+    SRoundsResponse GetRoundById(string gameId, string roundId);
+    bool HasGroupAlreadyProposed(string roundId, string phase);
+    void AddGroupRound(GroupRound groupRound);
+    void UpdateRound(DataRounds round);
+    SRoundsResponse ProposeGroup(string gameId, string roundId, GroupRequest groupRequest, string password, string player);
 
 }

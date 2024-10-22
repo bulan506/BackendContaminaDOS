@@ -13,6 +13,19 @@ namespace Core.Models.Business
         private readonly IMongoCollection<Round> _roundsCollection;
         private readonly IMongoCollection<GroupRound> _groupRoundsCollection;
 
+        private static readonly int MINIMUM_PLAYERS = 5;
+        private static readonly int MAXIMUM_PLAYERS = 10;
+
+        private static readonly int[,] GROUP_SIZES = {
+    // Round 1, 2, 3, 4, 5
+    { 2, 3, 2, 3, 3 }, // 5 players
+    { 2, 3, 4, 3, 4 }, // 6 players
+    { 2, 3, 3, 4, 4 }, // 7 players
+    { 3, 4, 4, 5, 5 }, // 8 players
+    { 3, 4, 4, 5, 5 }, // 9 players
+    { 3, 4, 4, 5, 5 }  // 10 players
+};
+
 
         public GameService(MongoDbSettings settings)
         {
@@ -20,7 +33,6 @@ namespace Core.Models.Business
             var database = client.GetDatabase(settings.DatabaseName);
             _gamesCollection = database.GetCollection<Game>(settings.GamesCollectionName);
             _roundsCollection = database.GetCollection<Round>(settings.RoundsCollectionName);
-            _groupRoundsCollection = database.GetCollection<GroupRound>("GroupRounds");
         }
 
         public ResponseJoin JoinGame(string gameId, string player, string password = null)
@@ -47,6 +59,17 @@ namespace Core.Models.Business
                     data = null
                 };
             }
+            // Verificar si el juego ya empezo
+            if (game.GameStatus != GameStatus.lobby)
+            {
+                return new ResponseJoin
+                {
+                    status = 409, // Conflicto, el límite de jugadores ha sido alcanzado
+                    msg = "The game already started",
+                    data = { }
+                };
+            }
+
 
             // Verificar si se requiere una contraseña
             if (!string.IsNullOrEmpty(game.GamePassword))
@@ -90,7 +113,8 @@ namespace Core.Models.Business
             {
                 PlayerId = Guid.NewGuid().ToString(),
                 PlayerName = player,
-                PlayerType = "participant" // Asignar tipo de jugador
+                PlayerType = "participant", // Asignar tipo de jugador
+                PlayerVote = "none"
             };
 
             game.Players.Add(newPlayer);
@@ -125,104 +149,6 @@ namespace Core.Models.Business
             };
         }
 
-        // Agregar los nuevos métodos
-                public SRoundsResponse AddGroupRound(GroupRound groupRound)
-                {
-                    if (groupRound == null)
-                    {
-                        return new SRoundsResponse
-                        {
-                            status = 400, // Bad Request
-                            msg = "Invalid GroupRound object",
-                            data = null
-                        };
-                    }
-
-                    // Verificar que existan las referencias
-                    var game = _gamesCollection.Find(g => g.GameId == groupRound.gameId).FirstOrDefault();
-                    var round = _roundsCollection.Find(r => r.id == groupRound.roundId).FirstOrDefault();
-                    var player = game?.Players.FirstOrDefault(p => p.PlayerName == groupRound.playerId);
-
-                    // Manejar la ausencia de referencias válidas
-                    if (game == null || round == null || player == null)
-                    {
-                        return new SRoundsResponse
-                        {
-                            status = 409, // Conflict
-                            msg = "Invalid references in GroupRound",
-                            data = null
-                        };
-                    }
-
-                    // Asignar las referencias virtuales
-                    groupRound.game = game;
-                    groupRound.round = round;
-                    groupRound.player = player;
-
-                    try
-                    {
-                        _groupRoundsCollection.InsertOne(groupRound);
-                        return new SRoundsResponse
-                        {
-                            status = 201, // Created
-                            msg = "GroupRound added successfully",
-                            data = null
-                        };
-                    }
-                    catch (Exception ex)
-                    {
-                        return new SRoundsResponse
-                        {
-                            status = 500, // Internal Server Error
-                            msg = "An error occurred while adding the GroupRound",
-                            data = null,
-                            others = new List<ErrorDetail>
-                            {
-                                new ErrorDetail { status = 500, msg = ex.Message }
-                            }
-                        };
-                    }
-                }
-
-                public SRoundsResponse UpdateRound(DataRounds round)
-                {
-                    if (round == null)
-                    {
-                        return new SRoundsResponse
-                        {
-                            status = 400, // Bad Request
-                            msg = "Invalid round object",
-                            data = null
-                        };
-                    }
-
-                    var filter = Builders<Round>.Filter.Eq(r => r.id, round.id);
-                    var update = Builders<Round>.Update
-                        .Set(r => r.status, round.status)
-                        .Set(r => r.updatedAt, round.updatedAt)
-                        .Set(r => r.group, round.group)
-                        .Set(r => r.votes, round.votes);
-
-                    var result = _roundsCollection.UpdateOne(filter, update);
-
-                    // Verifica si se ha actualizado alguna ronda
-                    if (result.MatchedCount == 0)
-                    {
-                        return new SRoundsResponse
-                        {
-                            status = 404, // No encontrado
-                            msg = "Round not found",
-                            data = null
-                        };
-                    }
-
-                    return new SRoundsResponse
-                    {
-                        status = 200, // OK
-                        msg = "Round updated successfully",
-                        data = round // Puedes devolver la ronda actualizada
-                    };
-                }
 
         public ResponseStart StartGame(string gameId, string player, string password)
         {
@@ -299,7 +225,8 @@ namespace Core.Models.Business
                 gameId = game.GameId,
                 group = new List<string>(),
                 votes = new List<bool>(),
-                id = Guid.NewGuid().ToString()
+                id = Guid.NewGuid().ToString(),
+                roundCount = 1
             };
 
         }
@@ -317,12 +244,16 @@ namespace Core.Models.Business
                 return new RoundsResponse { status = 403, msg = "Not part of the game" };
             }
 
-            // Validación de contraseña solo si el juego tiene contraseña y el jugador proporciona una
-            if (!string.IsNullOrEmpty(game.GamePassword) && !string.IsNullOrEmpty(password))
+            // Validación de contraseña
+            if (!string.IsNullOrEmpty(game.GamePassword))
             {
-                if (game.GamePassword != password)
+                if (string.IsNullOrEmpty(password) || game.GamePassword != password)
                 {
-                    return new RoundsResponse { status = 401, msg = "Invalid credentials" };
+                    return new RoundsResponse
+                    {
+                        status = 401,
+                        msg = "Invalid credentials"
+                    };
                 }
             }
             // Verificar si el juego está en estado "lobby"
@@ -432,58 +363,7 @@ namespace Core.Models.Business
         }
 
 
-        public SRoundsResponse GetRoundById(string gameId, string roundId)
-        {
-            // Buscar el juego utilizando el gameId
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
-
-            if (game == null)
-            {
-                return new SRoundsResponse
-                {
-                    status = 404,
-                    msg = "Game not found",
-                    data = null
-                };
-            }
-
-            // Aquí puedes buscar la ronda específica usando roundId
-            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
-
-            if (round == null)
-            {
-                return new SRoundsResponse
-                {
-                    status = 404,
-                    msg = "Round not found",
-                    data = null
-                };
-            }
-
-            // Si se encuentra la ronda, se devuelve la información
-            var dataRound = new DataRounds
-            {
-                id = round.id,
-                leader = round.leader,
-                status = round.status,
-                result = round.result,
-                phase = round.phase,
-                group = round.group,
-                votes = round.votes,
-                createdAt = round.createdAt,
-                updatedAt = round.updatedAt
-            };
-
-            return new SRoundsResponse
-            {
-                status = 200,
-                msg = "Round found",
-                data = dataRound
-            };
-        }
-
-
-        public ResponseGameId GetGameById(string gameId, string player, string password)
+        private ResponseGameId GetGameById(string gameId, string player, string password)
         {
             var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
 
@@ -540,18 +420,6 @@ namespace Core.Models.Business
             };
         }
 
-        private bool HasGroupAlreadyProposed(string roundId, string phase)
-        {
-            // Verificar si ya se ha propuesto un grupo en esa fase
-            return _groupRoundsCollection
-            .Find(g => g.roundId == roundId)
-            .Any();
-
-
-        }
-
-
-      
 
         // Método para proponer un grupo
         public SRoundsResponse ProposeGroup(string gameId, string roundId, GroupRequest groupRequest, string password, string player)
@@ -588,17 +456,17 @@ namespace Core.Models.Business
 
             // Verificar existencia del juego
             var gameResponse = GetGameById(gameId, player, password);
-            if (gameResponse.status == 404)
+            if (gameResponse.status != 200 || gameResponse.data == null)
             {
                 return new SRoundsResponse
                 {
-                    status = 404,
-                    msg = "Game not found",
+                    status = gameResponse.status,
+                    msg = gameResponse.msg,
                     data = null,
                     others = new List<ErrorDetail>
-                {
-                    new ErrorDetail { status = 404, msg = "Game not found" }
-                }
+            {
+                new ErrorDetail { status = gameResponse.status, msg = gameResponse.msg }
+            }
                 };
             }
 
@@ -612,7 +480,7 @@ namespace Core.Models.Business
             var round = roundResponse.data;
 
             // Validar estado de la ronda y líder
-            if (round.status != "waiting-on-leader" || player != round.leader)
+            if (round.status != "waiting-on-leader")
             {
                 return new SRoundsResponse
                 {
@@ -623,64 +491,19 @@ namespace Core.Models.Business
             }
 
             // Verificar si ya se propuso un grupo
-            if (HasGroupAlreadyProposed(round.id, round.phase) && round.status != "voting")
+            if (round.group != null && round.group.Any())
             {
                 return new SRoundsResponse
                 {
                     status = 409,
-                    msg = "Group already proposed in this phase",
+                    msg = "Asset already exists",
                     data = null
                 };
             }
 
-            // Validar tamaño del grupo
-            int requiredGroupSize = GetRequiredGroupSize(gameResponse.data.players.Count());
-            if (groupRequest.group.Count != requiredGroupSize)
-            {
-                return new SRoundsResponse
-                {
-                    status = 428,
-                    msg = $"Requires a group of {requiredGroupSize} members",
-                    data = null
-                };
-            }
-
-            // Validar que todos los miembros del grupo existan
-            var invalidPlayers = groupRequest.group.Where(member => !gameResponse.data.players.Contains(member)).ToList();
-            if (invalidPlayers.Any())
-            {
-                return new SRoundsResponse
-                {
-                    status = 428,
-                    msg = $"The player(s) {string.Join(", ", invalidPlayers)} don't exist",
-                    data = null
-                };
-            }
-
-            try
-            {
-                // Registrar miembros del grupo
-                foreach (var member in groupRequest.group)
-                {
-                    var groupRound = new GroupRound
-                    {
-                        gameId = gameResponse.data.id,
-                        roundId = round.id,
-                        playerId = member
-                    };
-                    AddGroupRound(groupRound);
-                }
-
-                // Actualizar estado de la ronda
-                round.status = "voting";
-                round.updatedAt = DateTime.UtcNow;
-                UpdateRound(round); // Asegurarse de que UpdateRound acepte un objeto Round
-
-                // Obtener la ronda actualizada para la respuesta
-                var updatedRoundResponse = GetRoundDetail(gameId, roundId, player, password);
-                return updatedRoundResponse;
-            }
-            catch (Exception)
+            var roundBD = _roundsCollection.Find(r => r.gameId == gameId && r.id == round.id).SingleOrDefault();
+            int requiredGroupSize = GetRequiredGroupSize(gameResponse.data.players.Count(), roundBD.roundCount);
+            if (requiredGroupSize < 0)
             {
                 return new SRoundsResponse
                 {
@@ -693,15 +516,286 @@ namespace Core.Models.Business
                 }
                 };
             }
-        }
-
-//FALTA MODIFICAR ESTO
-        private int GetRequiredGroupSize(int playerCount)
+            if (groupRequest.group.Count != requiredGroupSize)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = $"Requires a group of {requiredGroupSize} members",
+                    data = null
+                };
+            }
+            var distinctMembers = groupRequest.group.Distinct().ToList();
+            if (distinctMembers.Count != groupRequest.group.Count)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "Invalid or missing group",
+                    data = null,
+                    others = new List<ErrorDetail>
         {
-            return Math.Max(3, playerCount / 3);
+            new ErrorDetail { status = 428, msg = "Group members must be different from each other" }
+        }
+                };
+            }
+
+            // Validar que todos los miembros del grupo existan
+            var invalidPlayers = groupRequest.group.Where(member => !gameResponse.data.players.Contains(member)).ToList();
+            if (invalidPlayers.Any())
+            {
+                return new SRoundsResponse
+                {
+                    status = 409,
+                    msg = $"Invalid group members",
+                    data = null
+                };
+            }
+            // llegar aqui ya paso por todos los filtros
+            return AddGroupRound(gameId, roundId, groupRequest, player, password);
+        }
+        private SRoundsResponse AddGroupRound(string gameId, string roundId, GroupRequest groupRequest, string player, string password)
+        {
+            try
+            {
+                // Obtener la ronda actual
+                var round = _roundsCollection.Find(r => r.id == roundId && r.gameId == gameId).FirstOrDefault();
+                if (round == null)
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 404,
+                        msg = "Round not found",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 404, msg = "Round not found" }
+                }
+                    };
+                }
+
+                // Validar que el jugador sea el líder de la ronda
+                if (round.leader != player)
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 409,
+                        msg = "Only the round leader can propose groups",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 403, msg = "Only the round leader can propose groups" }
+                }
+                    };
+                }
+
+                // Validar que la ronda esté en el estado correcto
+                if (round.status != "waiting-on-leader")
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 409,
+                        msg = "Asset already exists",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 409, msg = "Round is not in the correct state for group proposal" }
+                }
+                    };
+                }
+                // Definir la actualización
+                var update = Builders<Round>.Update
+                    .Set(r => r.group, groupRequest.group)
+                    .Set(r => r.status, "voting")
+                    .Set(r => r.votes, new List<bool>())  // Inicializar los votos
+                    .Set(r => r.updatedAt, DateTime.UtcNow);
+
+                // Ejecutar la actualización
+                var updateResult = _roundsCollection.UpdateOne(
+                    r => r.id == roundId && r.gameId == gameId,
+                    update
+                );
+
+                if (updateResult.ModifiedCount > 0)
+                {
+                    return GetRoundDetail(gameId, roundId, player, password);
+                }
+                else
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 500,
+                        msg = "Failed to update round",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 500, msg = "Failed to update the round in the database" }
+                }
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new SRoundsResponse
+                {
+                    status = 500,
+                    msg = "An error occurred while updating the round",
+                    data = null,
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 500, msg = ex.Message }
+            }
+                };
+            }
         }
 
-    
+        private int GetRequiredGroupSize(int playerCount, int currentRound)
+        {
+            // Validar el número de jugadores y si hay algo mal entonces -1
+            if (playerCount < MINIMUM_PLAYERS || playerCount > MAXIMUM_PLAYERS)
+            {
+                return -1;
+            }
 
+            // Validar el número de ronda (las rondas van de 1 a 5)
+            if (currentRound < 1 || currentRound > 5)
+            {
+                return -1;
+            }
+
+            int playerIndex = playerCount - MINIMUM_PLAYERS;
+            int roundIndex = currentRound - 1;
+
+            return GROUP_SIZES[playerIndex, roundIndex];
+        }
+
+
+        public SRoundsResponse Vote(string gameId, string roundId, string player, string password, bool vote)
+        {
+            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            if (game == null)
+            {
+                return new SRoundsResponse { status = 404, msg = "The specified resource was not found" };
+            }
+
+            var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
+            if (currentPlayer == null)
+            {
+                return new SRoundsResponse { status = 403, msg = "Not part of the game" };
+            }
+
+            // Validación de si el jugador ya votó
+            if (currentPlayer.PlayerVote != "none")
+            {  // Asumiendo que 'none' es un string que representa que no ha votado
+                return new SRoundsResponse { status = 409, msg = "Player has already voted", data = null };
+            }
+
+            // Validación de contraseña
+            if (!string.IsNullOrEmpty(game.GamePassword))
+            {
+                if (string.IsNullOrEmpty(password) || game.GamePassword != password)
+                {
+                    return new SRoundsResponse { status = 401, msg = "Invalid credentials" };
+                }
+
+            }
+
+            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+
+            if (game.GameStatus != GameStatus.rounds || round.status != "voting")
+            {
+                return new SRoundsResponse { status = 428, msg = "This action is not allowed at this time", data = null };
+            }
+
+            if (round == null)
+            {
+                return new SRoundsResponse { status = 404, msg = "Round not found", data = null };
+            }
+
+            if (round.votes.Count >= game.Players.Count)
+            {
+                return new SRoundsResponse { status = 409, msg = "Votes already cast", data = null };
+            }
+
+            currentPlayer.PlayerVote = vote.ToString();
+
+            var playerIndex = game.Players.FindIndex(p => p.PlayerName == player);
+            if (playerIndex != -1)
+            {
+                game.Players[playerIndex] = currentPlayer;
+            }
+
+            _gamesCollection.ReplaceOne(game => game.GameId == gameId, game);
+            round.votes.Add(vote);
+
+            // Si ya han votado todos los jugadores, determinar el resultado
+            if (round.votes.Count >= game.Players.Count)
+            {
+                var resultRound = determineResultVoting(round);
+                game.Players.ForEach(p => p.PlayerVote = "none");
+                _gamesCollection.ReplaceOne(game => game.GameId == gameId, game);
+                _roundsCollection.ReplaceOne(r => r.id == roundId, resultRound);
+            }
+            else
+            {
+                _roundsCollection.ReplaceOne(r => r.id == roundId, round);
+            }
+
+            round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+
+            var dataRound = new DataRounds
+            {
+                id = round.id,
+                leader = round.leader,
+                status = round.status,
+                result = round.result,
+                phase = round.phase,
+                group = round.group,
+                votes = round.votes.Select(v => (bool)v).ToList(),
+                createdAt = round.createdAt,
+                updatedAt = round.updatedAt
+            };
+
+            return new SRoundsResponse
+            {
+                status = 200,
+                msg = "Round found",
+                data = dataRound
+            };
+        }
+        private Round determineResultVoting(Round round)
+        {
+            var votesTrue = round.votes.Count(v => v == true);
+            var votesFalse = round.votes.Count(v => v == false);
+
+            if (votesTrue == votesFalse || votesFalse > votesTrue)
+            {
+                round.status = "waiting-on-leader";
+                switch (round.phase)
+                {
+                    case "vote1":
+                        round.votes = new List<bool>();
+                        round.group = new List<string>();
+                        round.phase = "vote2";
+                        break;
+                    case "vote2":
+                        round.votes = new List<bool>();
+                        round.group = new List<string>();
+                        round.phase = "vote3";
+                        break;
+                    case "vote3":
+                        round.status = "ended";
+                        round.result = "enemies";
+                        break;
+                }
+            }
+            else
+            {
+                round.status = "waiting-on-group";
+            }
+            round.updatedAt = DateTime.UtcNow;
+
+            return round;
+        }
     }
 }

@@ -30,7 +30,7 @@ namespace Core.Models.Business
                     data = null
                 };
             }
-            //DeleteAllGames();
+            //  DeleteAllGames();
             var game = new Game
             {
                 GameId = Guid.NewGuid().ToString(),
@@ -48,7 +48,8 @@ namespace Core.Models.Business
                         PlayerId = Guid.NewGuid().ToString(),
                         PlayerName = requestGame.owner,
                         PlayerType = "owner",
-                        PlayerRole = "citizen"
+                        PlayerRole = "citizen",
+                        PlayerVote = "none"
                     }
                 },
                 Enemies = []

@@ -12,5 +12,6 @@ public class Round
     public List<bool> votes { get; set; } // Lista de votos
     public DateTime createdAt { get; set; }
     public DateTime updatedAt { get; set; }
+    public int roundCount { get; set; }
 
 }

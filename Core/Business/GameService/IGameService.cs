@@ -9,5 +9,6 @@ public interface IGameService
   SRoundsResponse GetRoundDetail(string gameId, string roundId, string player, string password);
   SRoundsResponse ProposeGroup(string gameId, string roundId, GroupRequest groupRequest, string password, string player);
   SRoundsResponse Vote(string gameId, string roundId, string player, string password, bool vote);
+  SRoundsResponse SubmitAction(string gameId, string roundId, string player, string password, bool action);
 
 }

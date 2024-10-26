@@ -31,7 +31,7 @@ namespace contaminaDOS.Controllers
             }
 
             // Validar que el campo 'action' esté presente
-            if (requestAction.action == null)
+           if (requestAction == null || !(requestAction.action is bool))
             {
                 return BadRequest(new ErrorResponse { status = 400, msg = "The field 'action' cannot be empty" });
             }

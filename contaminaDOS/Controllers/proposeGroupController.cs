@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Core.Models.Types;
 using System;
+using System.Text.Json;
 
 namespace contaminaDOS.Controllers
 {

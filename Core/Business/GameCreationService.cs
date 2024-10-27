@@ -49,7 +49,8 @@ namespace Core.Models.Business
                         PlayerName = requestGame.owner,
                         PlayerType = "owner",
                         PlayerRole = "citizen",
-                        PlayerVote = "none"
+                        PlayerVote = "none",
+                        PlayerAction= "none"
                     }
                 },
                 Enemies = []

@@ -17,23 +17,21 @@ namespace contaminaDOS.Controllers
 
         // PUT /api/games/{gameId}/rounds/{roundId}
         [HttpPut]
-        public ActionResult<ActionResponse> SubmitAction(
+        public ActionResult<SRoundsResponse> SubmitAction(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
             [FromHeader(Name = "password")] string? password = null,
             [FromHeader(Name = "player")] string player = null,
-            [FromBody] RequestAction requestAction = null)
+            [FromBody] ActionRequest requestAction = null)
         {
             // Validar que el cuerpo de la solicitud no esté vacío
             if (requestAction == null)
             {
                 return BadRequest(new ErrorResponse { status = 400, msg = "The body cannot be empty" });
             }
-
-            // Validar que el campo 'action' esté presente
-           if (requestAction == null || !(requestAction.action is bool))
+            if (!bool.TryParse(requestAction.action.ToString(), out bool action))
             {
-                return BadRequest(new ErrorResponse { status = 400, msg = "The field 'action' cannot be empty" });
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid or missing action" });
             }
 
             // Validar que los parámetros obligatorios estén presentes
@@ -47,7 +45,7 @@ namespace contaminaDOS.Controllers
             }
 
             // Llamada al servicio para procesar la acción del jugador
-            var result = _gameService.SubmitAction(gameId, roundId, player, password, requestAction.action.Value);
+            var result = _gameService.SubmitAction(gameId, roundId, player, password, action);
 
             switch (result.status)
             {
@@ -55,36 +53,36 @@ namespace contaminaDOS.Controllers
                     return StatusCode(401, new ErrorResponse
                     {
                         status = 401,
-                        msg = "Invalid credentials"
+                        msg = result.msg
                     });
                 case 403:
                     return StatusCode(403, new ErrorResponse
                     {
                         status = 403,
-                        msg = "Not part of the game"
+                        msg = result.msg
                     });
                 case 404:
                     return StatusCode(404, new ErrorResponse
                     {
                         status = 404,
-                        msg = "The specified resource was not found"
+                        msg = result.msg
                     });
                 case 409:
                     return StatusCode(409, new ErrorResponse
                     {
                         status = 409,
-                        msg = "Action already registered"
+                        msg = result.msg
                     });
                 case 428:
                     return StatusCode(428, new ErrorResponse
                     {
                         status = 428,
-                        msg = "This action is not allowed at this time"
+                        msg = result.msg
                     });
             }
 
             // 200 okk
-            return Ok(new ActionResponse
+            return Ok(new SRoundsResponse
             {
                 status = 200,
                 msg = "Action registered",
@@ -93,5 +91,5 @@ namespace contaminaDOS.Controllers
         }
     }
 
-   
+
 }

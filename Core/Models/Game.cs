@@ -27,5 +27,6 @@ public class Player
     public string PlayerType { get; set; }
     public string PlayerRole { get; set; }
     public string PlayerVote { get; set; }
+    public string PlayerAction { get; set; }
 
 }

@@ -19,18 +19,18 @@ namespace contaminaDOS.controllers
         public ActionResult<ResponseVote> Vote(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
-            [FromHeader(Name = "password")] string? password = null,
+            [FromHeader(Name = "password")] string password = null,
             [FromHeader(Name = "player")] string player = null,
             [FromBody] RequestVote requestVote = null)
         {
-            if (requestVote == null)
-            {
-                return BadRequest(new ErrorResponse { status = 400, msg = "The body cannot be empty" });
-            }
-
-            if (requestVote.vote == null)
+            if (requestVote == null || requestVote.vote == null)
             {
                 return BadRequest(new ErrorResponse { status = 400, msg = "The field vote cannot be empty" });
+            }
+
+            if (!bool.TryParse(requestVote.vote.ToString(), out bool vote))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid or missing vote" });
             }
 
             if (string.IsNullOrEmpty(player) || string.IsNullOrEmpty(gameId) || string.IsNullOrEmpty(roundId))
@@ -42,10 +42,7 @@ namespace contaminaDOS.controllers
                     data = { }
                 });
             }
-
-
-            var result = _gameService.Vote(gameId, roundId, player, password, requestVote.vote.Value);
-
+            var result = _gameService.Vote(gameId, roundId, player, password, vote);
             switch (result.status)
             {
                 case 401:
@@ -67,6 +64,13 @@ namespace contaminaDOS.controllers
                     {
                         status = 404,
                         msg = "The specified resource was not found",
+                        data = { }
+                    });
+                case 409:
+                    return StatusCode(409, new ErrorResponse
+                    {
+                        status = 404,
+                        msg = result.msg,
                         data = { }
                     });
                 case 428:

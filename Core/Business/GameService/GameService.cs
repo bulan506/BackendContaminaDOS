@@ -114,7 +114,8 @@ namespace Core.Models.Business
                 PlayerId = Guid.NewGuid().ToString(),
                 PlayerName = player,
                 PlayerType = "participant", // Asignar tipo de jugador
-                PlayerVote = "none"
+                PlayerVote = "none",
+                PlayerAction = "none"
             };
 
             game.Players.Add(newPlayer);
@@ -186,10 +187,10 @@ namespace Core.Models.Business
             game.GameStatus = GameStatus.rounds; // Marca el juego como en curso
             game.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             AssignRoles(game);
-            var firstRound = CreateNewRound(game);
+            var firstRound = CreateNewRound(game, 0);
             game.CurrentRound = firstRound.id;
             _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
-            _roundsCollection.InsertOne(firstRound);
+            // _roundsCollection.InsertOne(firstRound);
             return new ResponseStart { status = 200 };
         }
 
@@ -211,10 +212,23 @@ namespace Core.Models.Business
             game.Players = shuffledPlayers;
         }
 
-        private Round CreateNewRound(Game game)
+        private void ResetPlayerVotes(Game game)
         {
+            foreach (var player in game.Players)
+            {
+                player.PlayerVote = "none";
+                player.PlayerAction = "none";
+            }
+            _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+        }
+        private Round CreateNewRound(Game game, int currentRoundNumber)
+        {
+            if (currentRoundNumber > 0)
+            {
+                ResetPlayerVotes(game);
+            }
             var leader = game.Players[new Random().Next(game.Players.Count)];
-            return new Round
+            var newRound = new Round
             {
                 status = "waiting-on-leader",
                 phase = "vote1",
@@ -225,9 +239,12 @@ namespace Core.Models.Business
                 gameId = game.GameId,
                 group = new List<string>(),
                 votes = new List<bool>(),
+                actions = new List<bool>(),
                 id = Guid.NewGuid().ToString(),
-                roundCount = 1
+                roundCount = currentRoundNumber + 1
             };
+            _roundsCollection.InsertOne(newRound);
+            return newRound;
 
         }
         public RoundsResponse GetRounds(string gameId, string player, string password)
@@ -335,7 +352,7 @@ namespace Core.Models.Business
                 return new SRoundsResponse
                 {
                     status = 404,
-                    msg = "Invalid Round Id",
+                    msg = "The specified round was not found",
                     data = { },
                     others = []
                 };
@@ -357,7 +374,7 @@ namespace Core.Models.Business
             return new SRoundsResponse
             {
                 status = 200,
-                msg = "Round found",
+                msg = "Results found",
                 data = dataRound
             };
         }
@@ -677,6 +694,15 @@ namespace Core.Models.Business
             {
                 return new SRoundsResponse { status = 404, msg = "The specified resource was not found" };
             }
+            if (game.GameStatus == GameStatus.ended || game.GameStatus == GameStatus.lobby)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "This action is not allowed at this time",
+                    data = null
+                };
+            }
 
             var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
             if (currentPlayer == null)
@@ -731,7 +757,7 @@ namespace Core.Models.Business
             // Si ya han votado todos los jugadores, determinar el resultado
             if (round.votes.Count >= game.Players.Count)
             {
-                var resultRound = determineResultVoting(round);
+                var resultRound = determineResultVoting(round, game);
                 game.Players.ForEach(p => p.PlayerVote = "none");
                 _gamesCollection.ReplaceOne(game => game.GameId == gameId, game);
                 _roundsCollection.ReplaceOne(r => r.id == roundId, resultRound);
@@ -763,7 +789,7 @@ namespace Core.Models.Business
                 data = dataRound
             };
         }
-        private Round determineResultVoting(Round round)
+        private Round determineResultVoting(Round round, Game game)
         {
             var votesTrue = round.votes.Count(v => v == true);
             var votesFalse = round.votes.Count(v => v == false);
@@ -786,6 +812,18 @@ namespace Core.Models.Business
                     case "vote3":
                         round.status = "ended";
                         round.result = "enemies";
+                        _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
+
+                        if (CheckGameEndCondition(game, round.result))
+                        {
+                            EndGame(game, round.result, round);
+                        }
+                        else
+                        {
+                            var newRound = CreateNewRound(game, round.roundCount);
+                            game.CurrentRound = newRound.id;
+                            _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+                        }
                         break;
                 }
             }
@@ -794,43 +832,40 @@ namespace Core.Models.Business
                 round.status = "waiting-on-group";
             }
             round.updatedAt = DateTime.UtcNow;
+            _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
 
             return round;
         }
 
-        public ActionResponse SubmitAction(string gameId, string roundId, string player, string password, bool action)
+        public SRoundsResponse SubmitAction(string gameId, string roundId, string player, string password, bool action)
         {
-
-            //  Verificar si el juego existe
+            // Verificaciones iniciales
             var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
             if (game == null)
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 404,
                     msg = "The specified game was not found",
                     data = null
                 };
             }
-
-            //  Validar que el jugador está en el juego
-            var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
-            if (currentPlayer == null)
+            if (game.GameStatus == GameStatus.ended || game.GameStatus == GameStatus.lobby)
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
-                    status = 403,
-                    msg = "Player is not part of the game",
+                    status = 428,
+                    msg = "This action is not allowed at this time",
                     data = null
                 };
             }
 
-            //  Verificar la contraseña si es necesaria
+            // Verificar contraseña
             if (!string.IsNullOrEmpty(game.GamePassword))
             {
                 if (string.IsNullOrEmpty(password) || game.GamePassword != password)
                 {
-                    return new ActionResponse
+                    return new SRoundsResponse
                     {
                         status = 401,
                         msg = "Invalid credentials",
@@ -839,11 +874,23 @@ namespace Core.Models.Business
                 }
             }
 
-            //  Verificar si la ronda existe
+            // Verificar jugador
+            var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
+            if (currentPlayer == null)
+            {
+                return new SRoundsResponse
+                {
+                    status = 403,
+                    msg = "Player is not part of the game",
+                    data = null
+                };
+            }
+
+            // Verificar ronda
             var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
             if (round == null)
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 404,
                     msg = "The specified round was not found",
@@ -851,10 +898,10 @@ namespace Core.Models.Business
                 };
             }
 
-            //  Verificar que el estado de la ronda sea 'waiting-on-group'
+            // Validaciones de estado y reglas
             if (round.status != "waiting-on-group")
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 428,
                     msg = "This action is not allowed at this time",
@@ -862,11 +909,11 @@ namespace Core.Models.Business
                 };
             }
 
-            //  Validar que el tamaño del grupo es correcto
+
             int requiredGroupSize = GetRequiredGroupSize(game.Players.Count, round.roundCount);
             if (round.group.Count != requiredGroupSize)
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 428,
                     msg = $"The group size must be {requiredGroupSize}",
@@ -874,149 +921,119 @@ namespace Core.Models.Business
                 };
             }
 
-            //  Validar que el jugador que vota está en el grupo
-            
             if (!round.group.Contains(player))
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 403,
-                    msg = "Player is not part of the group for this round",
+                    msg = "You cannot contribute in this round",
                     data = null
                 };
             }
 
-            //  Validar si el jugador ya registró la acción
-            if (round.votes.Count >= round.group.Count)
+            if (currentPlayer.PlayerAction != "none")
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 409,
-                    msg = "Action already registered",
+                    msg = "You have already contributed",
                     data = null
                 };
             }
 
-            //  Validar si la acción es sabotaje (false), verificar si el jugador es enemigo o psycho
-            // Validación extra para que solo los enemies puedan sabotear
             if (!action && currentPlayer.PlayerRole != "enemy")
             {
-                return new ActionResponse
+                return new SRoundsResponse
                 {
                     status = 403,
-                    msg = "Only enemies can sabotage",
+                    msg = "You cannot contribute in this round",
                     data = null
                 };
             }
 
-            //  Registrar la acción (colaborar o sabotear)
-            round.votes.Add(action);
+            // Registrar la acción del jugador
+            var playerIndex = game.Players.FindIndex(p => p.PlayerName == player);
+            game.Players[playerIndex].PlayerAction = action ? "collaborate" : "sabotage";
+            round.actions.Add(action);
 
-           //  Verificar si todos han votado; si es la última acción, decidir el resultado de la ronda
-        if (IsGroupVotingComplete(round))
-        {
-            if (round.votes.Contains(false)) // Si hay al menos un sabotaje
+            // Actualizar timestamps
+            round.updatedAt = DateTime.UtcNow;
+            game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Procesar completitud de la ronda
+            if (IsGroupActionsComplete(round))
             {
+                // Determinar resultado
                 round.status = "ended";
-                round.result = "enemies";
+                round.result = round.actions.Contains(false) ? "enemies" : "citizens";
                 _roundsCollection.ReplaceOne(r => r.id == roundId && r.gameId == gameId, round);
 
-                // Verificar si los enemigos han ganado 3 rondas y terminar el juego
-                if (CheckGameEndCondition(game, "enemies"))
+                // Verificar fin del juego
+                if (CheckGameEndCondition(game, round.result))
                 {
-                    EndGame(game, "enemies");
-                    return new ActionResponse
-                    {
-                        status = 200,
-                        msg = "Results found",
-                        data = CreateActionData(round)
-                    };
+                    EndGame(game, round.result, round);
                 }
-
-                return new ActionResponse
+                else
                 {
-                    status = 200,
-                    msg = "Results found",
-                    data = CreateActionData(round)
-                };
+                    // Solo crear nueva ronda si no hay ganador
+                    var newRound = CreateNewRound(game, round.roundCount);
+                    game.CurrentRound = newRound.id;
+                    game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                    _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
+                }
             }
-            else // Si todos colaboraron
+            else
             {
-                round.status = "ended";
-                round.result = "citizens";
+                // Si la ronda no está completa, actualizamos ambos documentos
                 _roundsCollection.ReplaceOne(r => r.id == roundId && r.gameId == gameId, round);
-
-                // Verificar si los ciudadanos han ganado 3 rondas y terminar el juego
-                if (CheckGameEndCondition(game, "citizens"))
-                {
-                    EndGame(game, "citizens");
-                    return new ActionResponse
-                    {
-                        status = 200,
-                        msg = "Results found",
-                        data = CreateActionData(round)
-                    };
-                }
-
-                // Crear una nueva ronda si el juego no ha terminado
-                CreateNewRound(game);
-                return new ActionResponse
-                {
-                    status = 200,
-                    msg = "Results found",
-                    data = CreateActionData(round)
-                };
+                _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
             }
+
+            return GetRoundDetail(gameId, roundId, player, password);
         }
-
-        // Si no es la última acción, solo registrar la acción
-        _roundsCollection.ReplaceOne(r => r.id == roundId && r.gameId == gameId, round);
-
-        return new ActionResponse
-        {
-            status = 200,
-            msg = "Results found",
-            data = CreateActionData(round)
-        };
-    }
 
         private bool CheckGameEndCondition(Game game, string winningTeam)
         {
-            int victories = _roundsCollection.CountDocuments(r => r.gameId == game.GameId && r.result == winningTeam);
-            return victories >= 3;
+            // Filtrar solo las rondas completadas hasta la ronda actual
+            var filter = Builders<Round>.Filter.And(
+                Builders<Round>.Filter.Eq(r => r.gameId, game.GameId),
+                Builders<Round>.Filter.Eq(r => r.result, winningTeam),
+                Builders<Round>.Filter.Eq(r => r.status, "ended")
+            );
+
+            long victories = _roundsCollection.CountDocuments(filter);
+
+            if (victories >= 3)
+            {
+                // Si encontramos que hay un ganador, asegurémonos de que el juego se marque como terminado
+                if (game.GameStatus != GameStatus.ended)
+                {
+                    game.GameStatus = GameStatus.ended;
+                    _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+                }
+                return true;
+            }
+
+            return false;
         }
 
         // Método para terminar el juego
-        private void EndGame(Game game, string winningTeam)
+        private void EndGame(Game game, string winningTeam, Round round)
         {
-            game.GameStatus = "ended";
-            game.Winner = winningTeam;
+            game.GameStatus = GameStatus.ended;
+            round.result = winningTeam;
+            round.status = "ended";
+            round.updatedAt = DateTime.UtcNow;
             game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
             _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+            _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
         }
 
-         //Función para verificar si todos los jugadores del grupo han votado
-              private bool IsGroupVotingComplete(Round round) {
-        return round.votes.Count == round.group.Count;
-       }
-
-        // Crear ActionData para la respuesta
-    private ActionData CreateActionData(Round round)
-    {
-        return new ActionData
+        //Función para verificar si todos los jugadores del grupo han votado
+        private bool IsGroupActionsComplete(Round round)
         {
-            id = round.id,
-            leader = round.leader,
-            status = round.status,
-            phase = round.phase,
-            result = round.result,
-            group = round.group,
-            votes = round.votes
-        };
-    }
-        
+            return round.actions.Count == round.group.Count;
+        }
     }
 }
-
-
 

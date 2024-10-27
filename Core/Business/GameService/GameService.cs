@@ -11,8 +11,6 @@ namespace Core.Models.Business
     {
         private readonly IMongoCollection<Game> _gamesCollection;
         private readonly IMongoCollection<Round> _roundsCollection;
-        private readonly IMongoCollection<GroupRound> _groupRoundsCollection;
-
         private static readonly int MINIMUM_PLAYERS = 5;
         private static readonly int MAXIMUM_PLAYERS = 10;
 
@@ -25,7 +23,6 @@ namespace Core.Models.Business
     { 3, 4, 4, 5, 5 }, // 9 players
     { 3, 4, 4, 5, 5 }  // 10 players
 };
-
 
         public GameService(MongoDbSettings settings)
         {

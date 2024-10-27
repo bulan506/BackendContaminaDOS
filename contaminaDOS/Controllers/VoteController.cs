@@ -16,7 +16,7 @@ namespace contaminaDOS.controllers
         }
 
         [HttpPost]
-        public ActionResult<ResponseVote> Vote(
+        public ActionResult<SRoundsResponse> Vote(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
             [FromHeader(Name = "password")] string password = null,

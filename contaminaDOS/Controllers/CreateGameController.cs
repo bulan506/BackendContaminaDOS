@@ -17,7 +17,7 @@ namespace contaminaDOS.controllers
         }
 
         [HttpPost]
-        public ActionResult<ResponseCreate> CreateGame([FromBody] RequestGame requestGame)
+        public async Task<ActionResult<ResponseCreate>> CreateGame([FromBody] RequestGame requestGame)
         {
             if (requestGame == null)
             {
@@ -29,7 +29,7 @@ namespace contaminaDOS.controllers
                 return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
             }
 
-            var result = _gameCreationService.CreateGame(requestGame);
+            var result = await _gameCreationService.CreateGameAsync(requestGame);
 
             if (result.status == 409)
             {
@@ -40,7 +40,7 @@ namespace contaminaDOS.controllers
         }
 
         [HttpGet("{gameId}")]
-        public ActionResult<Game> GetGame(
+        public async Task<ActionResult<Game>> GetGame(
          [FromRoute] string gameId,
          [FromHeader(Name = "player")] string player = null,
          [FromHeader] string password = null)
@@ -70,7 +70,7 @@ namespace contaminaDOS.controllers
                 return BadRequest(errorResponse);
             }
 
-            var gameResponse = _gameCreationService.GetGame(gameId, player, password);
+            var gameResponse = await _gameCreationService.GetGameAsync(gameId, player, password);
 
             if (gameResponse.status == 404)
             {
@@ -90,7 +90,7 @@ namespace contaminaDOS.controllers
 
 
         [HttpGet]
-        public ActionResult<IEnumerable<Game>> SearchGames(
+        public async Task<ActionResult<IEnumerable<Game>>> SearchGames(
      [FromQuery] string name = null,
      [FromQuery] string? status = null,
      [FromQuery] int? page = null,
@@ -99,7 +99,7 @@ namespace contaminaDOS.controllers
             // Establecer valores por defecto si no se proporcionan
             int actualPage = page ?? 0;
             int actualLimit = limit ?? 50;
-            var result = _gameCreationService.SearchGames(name, status, actualPage, actualLimit);
+            var result = await _gameCreationService.SearchGamesAsync(name, status, actualPage, actualLimit);
 
             return Ok(result);
         }

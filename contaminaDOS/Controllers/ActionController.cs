@@ -17,7 +17,7 @@ namespace contaminaDOS.Controllers
 
         // PUT /api/games/{gameId}/rounds/{roundId}
         [HttpPut]
-        public ActionResult<SRoundsResponse> SubmitAction(
+        public async Task<ActionResult<SRoundsResponse>> SubmitAction(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
             [FromHeader(Name = "password")] string? password = null,
@@ -45,7 +45,7 @@ namespace contaminaDOS.Controllers
             }
 
             // Llamada al servicio para procesar la acción del jugador
-            var result = _gameService.SubmitAction(gameId, roundId, player, password, action);
+            var result = await _gameService.SubmitActionAsync(gameId, roundId, player, password, action);
 
             switch (result.status)
             {

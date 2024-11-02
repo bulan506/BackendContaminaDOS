@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Core.Models.Types;
-using Core.Models.Business;
 
 namespace contaminaDOS.controllers
 {
@@ -16,7 +15,7 @@ namespace contaminaDOS.controllers
         }
 
         [HttpPost]
-        public ActionResult<SRoundsResponse> Vote(
+        public async Task<ActionResult<SRoundsResponse>> Vote(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
             [FromHeader(Name = "password")] string password = null,
@@ -42,7 +41,7 @@ namespace contaminaDOS.controllers
                     data = { }
                 });
             }
-            var result = _gameService.Vote(gameId, roundId, player, password, vote);
+            var result = await _gameService.VoteAsync(gameId, roundId, player, password, vote);
             switch (result.status)
             {
                 case 401:

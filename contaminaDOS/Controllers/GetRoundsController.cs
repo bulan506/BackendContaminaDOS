@@ -18,7 +18,7 @@ namespace contaminaDOS.controllers
         }
 
         [HttpGet("rounds")]
-        public ActionResult<RoundsResponse> GetRoundsController(
+        public async Task<ActionResult<RoundsResponse>> GetRoundsController(
        [FromRoute] string gameId,
        [FromHeader(Name = "player")] string player = null,
        [FromHeader] string password = null)
@@ -42,7 +42,7 @@ namespace contaminaDOS.controllers
                 });
             }
 
-            var roundsResponse = _gameService.GetRounds(gameId, player, password);
+            var roundsResponse = await _gameService.GetRoundsAsync(gameId, player, password);
 
             if (roundsResponse.status != 200)
             {
@@ -54,7 +54,7 @@ namespace contaminaDOS.controllers
 
 
         [HttpGet("rounds/{roundId}")]
-        public ActionResult<SRoundsResponse> GetRoundsDetailsController(
+        public async Task<ActionResult<SRoundsResponse>> GetRoundsDetailsController(
     [FromRoute] string gameId = null,
     [FromRoute] string roundId = null,
     [FromHeader(Name = "player")] string player = null,
@@ -70,7 +70,7 @@ namespace contaminaDOS.controllers
                 });
             }
 
-            var roundDetailResponse = _gameService.GetRoundDetail(gameId, roundId, player, password);
+            var roundDetailResponse = await _gameService.GetRoundDetailAsync(gameId, roundId, player, password);
 
             return StatusCode(roundDetailResponse.status, roundDetailResponse);
         }

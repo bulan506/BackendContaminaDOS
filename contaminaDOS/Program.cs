@@ -21,16 +21,27 @@ builder.Services.AddCors(options =>
 });
 
 
-builder.Services.Configure<MongoDbSettings>(options =>
+builder.Services.Configure<DbSettings>(options =>
 {
-    options.ConnectionString = Env.GetString("MONGODB_CONNECTION_STRING"); // Cargar desde el .env
-    options.DatabaseName = "ContaminaDOS";  // Otras configuraciones fijas
-    options.GamesCollectionName = "Games";
-    options.RoundsCollectionName = "Rounds";
+    try
+    {
+        options.ConnectionString = Env.GetString("DB_CONNECTION_STRING")
+            ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+            ?? throw new InvalidOperationException("Database connection is not configured.");
+
+        options.DatabaseName = "ContaminaDOS";
+        options.GamesCollectionName = "Games";
+        options.RoundsCollectionName = "Rounds";
+    }
+    catch (Exception ex)
+    {
+        throw new Exception($"Error, db configuration: {ex.Message}");
+    }
 });
 
-builder.Services.AddSingleton<MongoDbSettings>(sp =>
-    sp.GetRequiredService<IOptions<MongoDbSettings>>().Value);
+
+builder.Services.AddSingleton<DbSettings>(sp =>
+    sp.GetRequiredService<IOptions<DbSettings>>().Value);
 
 builder.Services.AddScoped<IGameCreationService, GameCreationService>();
 builder.Services.AddScoped<IGameService, GameService>();
@@ -49,10 +60,21 @@ if (app.Environment.IsDevelopment())
 // Use CORS
 app.UseCors("AllowAll");
 
-//app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 
 //app.UseAuthorization();
+app.UseExceptionHandler("/error");
 
+// Map error controller
 app.MapControllers();
+app.Map("/error", (HttpContext context) =>
+{
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    return Results.Problem(
+        title: "Internal Server Error",
+        detail: "An unexpected error occurred. Please contact support if the issue persists.",
+        statusCode: 500
+    );
+});
 
 app.Run();

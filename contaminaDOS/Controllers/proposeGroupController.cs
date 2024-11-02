@@ -17,7 +17,7 @@ namespace contaminaDOS.Controllers
         }
 
         [HttpPatch("rounds/{roundId}")]
-        public ActionResult<SRoundsResponse> ProposeGroup(
+        public async Task<ActionResult<SRoundsResponse>> ProposeGroup(
             [FromRoute] string gameId,
             [FromRoute] string roundId,
             [FromBody] GroupRequest groupRequest,
@@ -25,7 +25,7 @@ namespace contaminaDOS.Controllers
             [FromHeader(Name = "player")] string player = null)
         {
             // Llamada al servicio para manejar la lógica de proponer el grupo
-            var response = _gameService.ProposeGroup(gameId, roundId, groupRequest, password, player);
+            var response = await _gameService.ProposeGroupAsync(gameId, roundId, groupRequest, password, player);
 
             // Retornar la respuesta del servicio
             return StatusCode(response.status, response);

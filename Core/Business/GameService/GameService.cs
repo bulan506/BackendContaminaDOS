@@ -24,7 +24,7 @@ namespace Core.Models.Business
     { 3, 4, 4, 5, 5 }  // 10 players
 };
 
-        public GameService(MongoDbSettings settings)
+        public GameService(DbSettings settings)
         {
             var client = new MongoClient(settings.ConnectionString);
             var database = client.GetDatabase(settings.DatabaseName);
@@ -32,9 +32,9 @@ namespace Core.Models.Business
             _roundsCollection = database.GetCollection<Round>(settings.RoundsCollectionName);
         }
 
-        public ResponseJoin JoinGame(string gameId, string player, string password = null)
+        public async Task<ResponseJoin> JoinGameAsync(string gameId, string player, string password = null)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
 
             if (game == null)
             {
@@ -123,7 +123,7 @@ namespace Core.Models.Business
                 .Set(g => g.Players, game.Players)
                 .Set(g => g.UpdatedAt, game.UpdatedAt);
 
-            _gamesCollection.UpdateOne(g => g.GameId == gameId, update);
+            await _gamesCollection.UpdateOneAsync(g => g.GameId == gameId, update);
 
             var data = new GameSearch
             {
@@ -148,9 +148,9 @@ namespace Core.Models.Business
         }
 
 
-        public ResponseStart StartGame(string gameId, string player, string password)
+        public async Task<ResponseStart> StartGameAsync(string gameId, string player, string password)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
 
             if (game == null)
             {
@@ -184,10 +184,9 @@ namespace Core.Models.Business
             game.GameStatus = GameStatus.rounds; // Marca el juego como en curso
             game.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             AssignRoles(game);
-            var firstRound = CreateNewRound(game, 0);
+            var firstRound = await CreateNewRoundAsync(game, 0);
             game.CurrentRound = firstRound.id;
-            _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
-            // _roundsCollection.InsertOne(firstRound);
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
             return new ResponseStart { status = 200 };
         }
 
@@ -209,20 +208,20 @@ namespace Core.Models.Business
             game.Players = shuffledPlayers;
         }
 
-        private void ResetPlayerVotes(Game game)
+        private async Task ResetPlayerVotesAsync(Game game)
         {
             foreach (var player in game.Players)
             {
                 player.PlayerVote = "none";
                 player.PlayerAction = "none";
             }
-            _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
         }
-        private Round CreateNewRound(Game game, int currentRoundNumber)
+        private async Task<Round> CreateNewRoundAsync(Game game, int currentRoundNumber)
         {
             if (currentRoundNumber > 0)
             {
-                ResetPlayerVotes(game);
+                await ResetPlayerVotesAsync(game);
             }
             var leader = game.Players[new Random().Next(game.Players.Count)];
             var newRound = new Round
@@ -240,14 +239,14 @@ namespace Core.Models.Business
                 id = Guid.NewGuid().ToString(),
                 roundCount = currentRoundNumber + 1
             };
-            _roundsCollection.InsertOne(newRound);
+            await _roundsCollection.InsertOneAsync(newRound);
             return newRound;
 
         }
-        public RoundsResponse GetRounds(string gameId, string player, string password)
+        public async Task<RoundsResponse> GetRoundsAsync(string gameId, string player, string password)
         {
 
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new RoundsResponse { status = 404, msg = "The specified resource was not found" };
@@ -282,10 +281,10 @@ namespace Core.Models.Business
                 };
             }
 
-            var rounds = _roundsCollection
+            var rounds = await _roundsCollection
                 .Find(r => r.gameId == gameId)
                 .SortByDescending(r => r.createdAt)
-                .ToList();
+                .ToListAsync();
 
             var dataRounds = rounds.Select(r => new DataRounds
             {
@@ -309,9 +308,9 @@ namespace Core.Models.Business
             };
         }
 
-        public SRoundsResponse GetRoundDetail(string gameId, string roundId, string player, string password)
+        public async Task<SRoundsResponse> GetRoundDetailAsync(string gameId, string roundId, string player, string password)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new SRoundsResponse
@@ -343,7 +342,7 @@ namespace Core.Models.Business
                 }
             }
 
-            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
             if (round == null)
             {
                 return new SRoundsResponse
@@ -377,9 +376,9 @@ namespace Core.Models.Business
         }
 
 
-        private ResponseGameId GetGameById(string gameId, string player, string password)
+        private async Task<ResponseGameId> GetGameByIdAsync(string gameId, string player, string password)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
 
             if (game == null)
             {
@@ -436,7 +435,7 @@ namespace Core.Models.Business
 
 
         // Método para proponer un grupo
-        public SRoundsResponse ProposeGroup(string gameId, string roundId, GroupRequest groupRequest, string password, string player)
+        public async Task<SRoundsResponse> ProposeGroupAsync(string gameId, string roundId, GroupRequest groupRequest, string password, string player)
         {
             // Validación del jugador
             if (string.IsNullOrEmpty(player) || player.Length < 3 || player.Length > 20)
@@ -469,7 +468,7 @@ namespace Core.Models.Business
             }
 
             // Verificar existencia del juego
-            var gameResponse = GetGameById(gameId, player, password);
+            var gameResponse = await GetGameByIdAsync(gameId, player, password);
             if (gameResponse.status != 200 || gameResponse.data == null)
             {
                 return new SRoundsResponse
@@ -485,7 +484,7 @@ namespace Core.Models.Business
             }
 
             // Obtener detalles de la ronda
-            var roundResponse = GetRoundDetail(gameId, roundId, player, password);
+            var roundResponse = await GetRoundDetailAsync(gameId, roundId, player, password);
             if (roundResponse.status != 200 || roundResponse.data == null)
             {
                 return roundResponse;
@@ -515,7 +514,7 @@ namespace Core.Models.Business
                 };
             }
 
-            var roundBD = _roundsCollection.Find(r => r.gameId == gameId && r.id == round.id).SingleOrDefault();
+            var roundBD = await _roundsCollection.Find(r => r.gameId == gameId && r.id == round.id).SingleOrDefaultAsync();
             int requiredGroupSize = GetRequiredGroupSize(gameResponse.data.players.Count(), roundBD.roundCount);
             if (requiredGroupSize < 0)
             {
@@ -566,14 +565,14 @@ namespace Core.Models.Business
                 };
             }
             // llegar aqui ya paso por todos los filtros
-            return AddGroupRound(gameId, roundId, groupRequest, player, password);
+            return await AddGroupRounAsync(gameId, roundId, groupRequest, player, password);
         }
-        private SRoundsResponse AddGroupRound(string gameId, string roundId, GroupRequest groupRequest, string player, string password)
+        private async Task<SRoundsResponse> AddGroupRounAsync(string gameId, string roundId, GroupRequest groupRequest, string player, string password)
         {
             try
             {
                 // Obtener la ronda actual
-                var round = _roundsCollection.Find(r => r.id == roundId && r.gameId == gameId).FirstOrDefault();
+                var round = await _roundsCollection.Find(r => r.id == roundId && r.gameId == gameId).FirstOrDefaultAsync();
                 if (round == null)
                 {
                     return new SRoundsResponse
@@ -625,14 +624,14 @@ namespace Core.Models.Business
                     .Set(r => r.updatedAt, DateTime.UtcNow);
 
                 // Ejecutar la actualización
-                var updateResult = _roundsCollection.UpdateOne(
+                var updateResult = await _roundsCollection.UpdateOneAsync(
                     r => r.id == roundId && r.gameId == gameId,
                     update
                 );
 
                 if (updateResult.ModifiedCount > 0)
                 {
-                    return GetRoundDetail(gameId, roundId, player, password);
+                    return await GetRoundDetailAsync(gameId, roundId, player, password);
                 }
                 else
                 {
@@ -684,9 +683,9 @@ namespace Core.Models.Business
         }
 
 
-        public SRoundsResponse Vote(string gameId, string roundId, string player, string password, bool vote)
+        public async Task<SRoundsResponse> VoteAsync(string gameId, string roundId, string player, string password, bool vote)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new SRoundsResponse { status = 404, msg = "The specified resource was not found" };
@@ -723,7 +722,7 @@ namespace Core.Models.Business
 
             }
 
-            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
 
             if (game.GameStatus != GameStatus.rounds || round.status != "voting")
             {
@@ -748,23 +747,23 @@ namespace Core.Models.Business
                 game.Players[playerIndex] = currentPlayer;
             }
 
-            _gamesCollection.ReplaceOne(game => game.GameId == gameId, game);
+            await _gamesCollection.ReplaceOneAsync(game => game.GameId == gameId, game);
             round.votes.Add(vote);
 
             // Si ya han votado todos los jugadores, determinar el resultado
             if (round.votes.Count >= game.Players.Count)
             {
-                var resultRound = determineResultVoting(round, game);
+                var resultRound = await determineResultVotingAsync(round, game);
                 game.Players.ForEach(p => p.PlayerVote = "none");
-                _gamesCollection.ReplaceOne(game => game.GameId == gameId, game);
-                _roundsCollection.ReplaceOne(r => r.id == roundId, resultRound);
+                await _gamesCollection.ReplaceOneAsync(game => game.GameId == gameId, game);
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId, resultRound);
             }
             else
             {
-                _roundsCollection.ReplaceOne(r => r.id == roundId, round);
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId, round);
             }
 
-            round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+            round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
 
             var dataRound = new DataRounds
             {
@@ -786,7 +785,7 @@ namespace Core.Models.Business
                 data = dataRound
             };
         }
-        private Round determineResultVoting(Round round, Game game)
+        private async Task<Round> determineResultVotingAsync(Round round, Game game)
         {
             var votesTrue = round.votes.Count(v => v == true);
             var votesFalse = round.votes.Count(v => v == false);
@@ -809,17 +808,17 @@ namespace Core.Models.Business
                     case "vote3":
                         round.status = "ended";
                         round.result = "enemies";
-                        _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
+                        await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
 
-                        if (CheckGameEndCondition(game, round.result))
+                        if (await CheckGameEndConditionAsync(game, round.result))
                         {
-                            EndGame(game, round.result, round);
+                            await EndGameAsync(game, round.result, round);
                         }
                         else
                         {
-                            var newRound = CreateNewRound(game, round.roundCount);
+                            var newRound = await CreateNewRoundAsync(game, round.roundCount);
                             game.CurrentRound = newRound.id;
-                            _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+                            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
                         }
                         break;
                 }
@@ -829,15 +828,15 @@ namespace Core.Models.Business
                 round.status = "waiting-on-group";
             }
             round.updatedAt = DateTime.UtcNow;
-            _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
+            await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
 
             return round;
         }
 
-        public SRoundsResponse SubmitAction(string gameId, string roundId, string player, string password, bool action)
+        public async Task<SRoundsResponse> SubmitActionAsync(string gameId, string roundId, string player, string password, bool action)
         {
             // Verificaciones iniciales
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new SRoundsResponse
@@ -884,7 +883,7 @@ namespace Core.Models.Business
             }
 
             // Verificar ronda
-            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
             if (round == null)
             {
                 return new SRoundsResponse
@@ -963,33 +962,33 @@ namespace Core.Models.Business
                 // Determinar resultado
                 round.status = "ended";
                 round.result = round.actions.Contains(false) ? "enemies" : "citizens";
-                _roundsCollection.ReplaceOne(r => r.id == roundId && r.gameId == gameId, round);
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId && r.gameId == gameId, round);
 
                 // Verificar fin del juego
-                if (CheckGameEndCondition(game, round.result))
+                if (await CheckGameEndConditionAsync(game, round.result))
                 {
-                    EndGame(game, round.result, round);
+                    await EndGameAsync(game, round.result, round);
                 }
                 else
                 {
                     // Solo crear nueva ronda si no hay ganador
-                    var newRound = CreateNewRound(game, round.roundCount);
+                    var newRound = await CreateNewRoundAsync(game, round.roundCount);
                     game.CurrentRound = newRound.id;
                     game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-                    _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
+                    await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
                 }
             }
             else
             {
                 // Si la ronda no está completa, actualizamos ambos documentos
-                _roundsCollection.ReplaceOne(r => r.id == roundId && r.gameId == gameId, round);
-                _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId && r.gameId == gameId, round);
+                await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
             }
 
-            return GetRoundDetail(gameId, roundId, player, password);
+            return await GetRoundDetailAsync(gameId, roundId, player, password);
         }
 
-        private bool CheckGameEndCondition(Game game, string winningTeam)
+        private async Task<bool> CheckGameEndConditionAsync(Game game, string winningTeam)
         {
             // Filtrar solo las rondas completadas hasta la ronda actual
             var filter = Builders<Round>.Filter.And(
@@ -998,7 +997,7 @@ namespace Core.Models.Business
                 Builders<Round>.Filter.Eq(r => r.status, "ended")
             );
 
-            long victories = _roundsCollection.CountDocuments(filter);
+            long victories = await _roundsCollection.CountDocumentsAsync(filter);
 
             if (victories >= 3)
             {
@@ -1006,7 +1005,7 @@ namespace Core.Models.Business
                 if (game.GameStatus != GameStatus.ended)
                 {
                     game.GameStatus = GameStatus.ended;
-                    _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
+                    await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
                 }
                 return true;
             }
@@ -1015,22 +1014,19 @@ namespace Core.Models.Business
         }
 
         // Método para terminar el juego
-        private void EndGame(Game game, string winningTeam, Round round)
+        private async Task EndGameAsync(Game game, string winningTeam, Round round)
         {
             game.GameStatus = GameStatus.ended;
             round.result = winningTeam;
             round.status = "ended";
             round.updatedAt = DateTime.UtcNow;
             game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-            _gamesCollection.ReplaceOne(g => g.GameId == game.GameId, game);
-            _roundsCollection.ReplaceOne(r => r.id == round.id && r.gameId == game.GameId, round);
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
+            await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
         }
 
         //Función para verificar si todos los jugadores del grupo han votado
-        private bool IsGroupActionsComplete(Round round)
-        {
-            return round.actions.Count == round.group.Count;
-        }
+        private bool IsGroupActionsComplete(Round round) { return round.actions.Count == round.group.Count; }
     }
 }
 

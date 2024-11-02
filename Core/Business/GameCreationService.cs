@@ -11,16 +11,16 @@ namespace Core.Models.Business
     {
         private readonly IMongoCollection<Game> _gamesCollection;
 
-        public GameCreationService(MongoDbSettings settings)
+        public GameCreationService(DbSettings settings)
         {
             var client = new MongoClient(settings.ConnectionString);
             var database = client.GetDatabase(settings.DatabaseName);
             _gamesCollection = database.GetCollection<Game>(settings.GamesCollectionName);
         }
 
-        public ResponseCreate CreateGame(RequestGame requestGame)
+        public async Task<ResponseCreate> CreateGameAsync(RequestGame requestGame)
         {
-            var gameFound = _gamesCollection.Find(g => g.GameName == requestGame.name).Any();
+            var gameFound = await _gamesCollection.Find(g => g.GameName == requestGame.name).AnyAsync();
             if (gameFound)
             {
                 return new ResponseCreate
@@ -56,7 +56,7 @@ namespace Core.Models.Business
                 Enemies = []
             };
 
-            _gamesCollection.InsertOne(game);
+            await _gamesCollection.InsertOneAsync(game);
 
             var data = new DataCreate
             {
@@ -80,9 +80,9 @@ namespace Core.Models.Business
             };
         }
 
-        public ResponseAllGames GetAllGames()
+        public async Task<ResponseAllGames> GetAllGamesAsync()
         {
-            var games = _gamesCollection.Find(_ => true).ToList();
+            var games = await _gamesCollection.Find(_ => true).ToListAsync();
 
             var dataListG = games.Select(g => new DataCreate
             {
@@ -106,9 +106,9 @@ namespace Core.Models.Business
             };
         }
 
-        public ResponseCreate GetGame(string id, string player, string password = null)
+        public async Task<ResponseCreate> GetGameAsync(string id, string player, string password = null)
         {
-            var game = _gamesCollection.Find(g => g.GameId == id).FirstOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == id).FirstOrDefaultAsync();
 
             if (game == null)
             {
@@ -179,7 +179,7 @@ namespace Core.Models.Business
                 data = data
             };
         }
-        public ResponseAllGames SearchGames(string name = null, string status = null, int page = 0, int limit = 50)
+        public async Task<ResponseAllGames> SearchGamesAsync(string name = null, string status = null, int page = 0, int limit = 50)
         {
             var errorResponse = new ErrorResponse
             {
@@ -234,18 +234,14 @@ namespace Core.Models.Business
 
             if (!string.IsNullOrEmpty(status))
             {
-                Console.WriteLine($"Status recibido: {status}"); // Log del status recibido
 
                 if (Enum.TryParse<GameStatus>(status, true, out var parsedStatus))
                 {
-                    Console.WriteLine($"Status parseado: {parsedStatus}"); // Log del status parseado
                     filter = filter & Builders<Game>.Filter.Eq(g => g.GameStatus, parsedStatus);
                 }
                 else
                 {
-                    Console.WriteLine($"Status inválido y res por parametro : {status}"); // Log si el status es inválido
-                                                                                          //  DeleteAllGames();
-                                                                                          // Si el status no es válido, devolvemos un error
+                    //  DeleteAllGames()                                                                                          // Si el status no es válido, devolvemos un error
                     return new ResponseAllGames
                     {
                         status = 400,
@@ -259,10 +255,10 @@ namespace Core.Models.Business
                 }
             }
 
-            var games = _gamesCollection.Find(filter)
+            var games = await _gamesCollection.Find(filter)
                 .Skip(page * limit)
                 .Limit(limit)
-                .ToList();
+                .ToListAsync();
 
             var dataListG = games.Select(g => new DataCreate
             {

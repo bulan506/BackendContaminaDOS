@@ -16,7 +16,7 @@ namespace contaminaDOS.Controllers
         }
 
         [HttpPut("{gameId}")]
-        public ActionResult<ResponseJoin> JoinGame(
+        public async Task<ActionResult<ResponseJoin>> JoinGame(
             [FromRoute] string gameId,
             [FromHeader(Name = "player")] string playerFromHeader = null,
             [FromHeader(Name = "password")] string passwordFromHeader = null,
@@ -38,7 +38,7 @@ namespace contaminaDOS.Controllers
             }
 
             // Lógica de unión al juego usando el servicio
-            var result = _gameService.JoinGame(gameId, player, password);
+            var result = await _gameService.JoinGameAsync(gameId, player, password);
 
             // Manejar los códigos de estado según el resultado de la unión al juego
             switch (result.status)

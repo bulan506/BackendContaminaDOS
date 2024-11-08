@@ -13,7 +13,7 @@ namespace Core.Models.Business
         private readonly IMongoCollection<Round> _roundsCollection;
         private static readonly int MINIMUM_PLAYERS = 5;
         private static readonly int MAXIMUM_PLAYERS = 10;
-
+        private static readonly Random _random = new Random();
         private static readonly int[,] GROUP_SIZES = {
     // Round 1, 2, 3, 4, 5
     { 2, 3, 2, 3, 3 }, // 5 players
@@ -192,20 +192,33 @@ namespace Core.Models.Business
 
         private void AssignRoles(Game game)
         {
-            var playerCount = game.Players.Count;
-            var enemyCount = playerCount switch
+            // Determinar número de enemigos según cantidad de jugadores
+            var enemyCount = game.Players.Count switch
             {
                 <= 6 => 2,
                 <= 9 => 3,
                 _ => 4
             };
 
-            var shuffledPlayers = game.Players.OrderBy(x => Guid.NewGuid()).ToList();
-            for (int i = 0; i < shuffledPlayers.Count; i++)
+            // Asignar roles aleatoriamente
+            int enemiesAssigned = 0;
+            while (enemiesAssigned < enemyCount)
             {
-                shuffledPlayers[i].PlayerRole = i < enemyCount ? "enemy" : "citizen";
+                // Elegir un índice aleatorio entre 0 y el número total de jugadores - 1
+                int randomIndex = _random.Next(game.Players.Count);
+                // Si el jugador elegido no es enemigo, convertirlo
+                if (game.Players[randomIndex].PlayerRole != "enemy")
+                {
+                    game.Players[randomIndex].PlayerRole = "enemy";
+                    enemiesAssigned++;
+                }
             }
-            game.Players = shuffledPlayers;
+
+            // Asignar rol de "citizen" a todos los que no sean enemigos
+            foreach (var player in game.Players.Where(p => p.PlayerRole != "enemy"))
+            {
+                player.PlayerRole = "citizen";
+            }
         }
 
         private async Task ResetPlayerVotesAsync(Game game)

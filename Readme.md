@@ -62,7 +62,7 @@ Storage: Block Storage Only
 
 ### 📊 Architecture Diagram
 
-Place your architecture diagram here to show the infrastructure setup.
+Infrastructure setup.
 
 ![Architecture Diagram](/images/diagramOCI_Infrastructure.png)
 

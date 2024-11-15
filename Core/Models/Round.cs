@@ -10,7 +10,9 @@ public class Round
     public string phase { get; set; } // Fase actual del round
     public List<string> group { get; set; } // Lista de miembros del grupo
     public List<bool> votes { get; set; } // Lista de votos
+    public List<bool> actions { get; set; } // Lista de votos
     public DateTime createdAt { get; set; }
     public DateTime updatedAt { get; set; }
+    public int roundCount { get; set; }
 
 }

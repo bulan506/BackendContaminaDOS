@@ -7,8 +7,8 @@
         public string status { get; set; }
         public string result { get; set; }
         public string phase { get; set; }
-        public ICollection<string>? group { get; set; }
-        public ICollection<bool>? votes { get; set; }
+        public List<string> group { get; set; }
+        public List<bool> votes { get; set; }
         public DateTime createdAt { get; set; }
         public DateTime updatedAt { get; set; }
     }

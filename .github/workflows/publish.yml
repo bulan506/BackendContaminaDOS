@@ -1,0 +1,21 @@
+name: publish
+
+on:
+  push:
+    branches: ["Actions"]
+  pull_request:
+    branches: ["Actions"]
+
+jobs:
+  publish-UI:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Build & Push Image
+        run: |
+          
+          docker image build -t bulan506/contaminados2024api:latest .
+          docker image build -t bulan506/contaminados2024api:0.0.1 .
+          echo "${{ secrets.DOCKERHUBPASSC28223  }}" | docker login -u "brandon.vargassolano@ucr.ac.cr" --password-stdin
+          docker push bulan506/contaminados2024api:latest
+          docker push bulan506/contaminados2024api:0.0.1

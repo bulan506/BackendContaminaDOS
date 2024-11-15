@@ -11,9 +11,20 @@ namespace Core.Models.Business
     {
         private readonly IMongoCollection<Game> _gamesCollection;
         private readonly IMongoCollection<Round> _roundsCollection;
+        private static readonly int MINIMUM_PLAYERS = 5;
+        private static readonly int MAXIMUM_PLAYERS = 10;
+        private static readonly Random _random = new Random();
+        private static readonly int[,] GROUP_SIZES = {
+    // Round 1, 2, 3, 4, 5
+    { 2, 3, 2, 3, 3 }, // 5 players
+    { 2, 3, 4, 3, 4 }, // 6 players
+    { 2, 3, 3, 4, 4 }, // 7 players
+    { 3, 4, 4, 5, 5 }, // 8 players
+    { 3, 4, 4, 5, 5 }, // 9 players
+    { 3, 4, 4, 5, 5 }  // 10 players
+};
 
-
-        public GameService(MongoDbSettings settings)
+        public GameService(DbSettings settings)
         {
             var client = new MongoClient(settings.ConnectionString);
             var database = client.GetDatabase(settings.DatabaseName);
@@ -21,9 +32,9 @@ namespace Core.Models.Business
             _roundsCollection = database.GetCollection<Round>(settings.RoundsCollectionName);
         }
 
-        public ResponseJoin JoinGame(string gameId, string player, string password = null)
+        public async Task<ResponseJoin> JoinGameAsync(string gameId, string player, string password = null)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
 
             if (game == null)
             {
@@ -45,6 +56,17 @@ namespace Core.Models.Business
                     data = null
                 };
             }
+            // Verificar si el juego ya empezo
+            if (game.GameStatus != GameStatus.lobby)
+            {
+                return new ResponseJoin
+                {
+                    status = 409, // Conflicto, el límite de jugadores ha sido alcanzado
+                    msg = "The game already started",
+                    data = { }
+                };
+            }
+
 
             // Verificar si se requiere una contraseña
             if (!string.IsNullOrEmpty(game.GamePassword))
@@ -88,7 +110,9 @@ namespace Core.Models.Business
             {
                 PlayerId = Guid.NewGuid().ToString(),
                 PlayerName = player,
-                PlayerType = "participant" // Asignar tipo de jugador
+                PlayerType = "participant", // Asignar tipo de jugador
+                PlayerVote = "none",
+                PlayerAction = "none"
             };
 
             game.Players.Add(newPlayer);
@@ -99,7 +123,7 @@ namespace Core.Models.Business
                 .Set(g => g.Players, game.Players)
                 .Set(g => g.UpdatedAt, game.UpdatedAt);
 
-            _gamesCollection.UpdateOne(g => g.GameId == gameId, update);
+            await _gamesCollection.UpdateOneAsync(g => g.GameId == gameId, update);
 
             var data = new GameSearch
             {
@@ -123,9 +147,10 @@ namespace Core.Models.Business
             };
         }
 
-        public ResponseStart StartGame(string gameId, string player, string password)
+
+        public async Task<ResponseStart> StartGameAsync(string gameId, string player, string password)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
 
             if (game == null)
             {
@@ -159,35 +184,60 @@ namespace Core.Models.Business
             game.GameStatus = GameStatus.rounds; // Marca el juego como en curso
             game.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             AssignRoles(game);
-            var firstRound = CreateNewRound(game);
+            var firstRound = await CreateNewRoundAsync(game, 0);
             game.CurrentRound = firstRound.id;
-            _gamesCollection.ReplaceOne(g => g.GameId == gameId, game);
-            _roundsCollection.InsertOne(firstRound);
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
             return new ResponseStart { status = 200 };
         }
 
         private void AssignRoles(Game game)
         {
-            var playerCount = game.Players.Count;
-            var enemyCount = playerCount switch
+            // Determinar número de enemigos según cantidad de jugadores
+            var enemyCount = game.Players.Count switch
             {
                 <= 6 => 2,
                 <= 9 => 3,
                 _ => 4
             };
 
-            var shuffledPlayers = game.Players.OrderBy(x => Guid.NewGuid()).ToList();
-            for (int i = 0; i < shuffledPlayers.Count; i++)
+            // Asignar roles aleatoriamente
+            int enemiesAssigned = 0;
+            while (enemiesAssigned < enemyCount)
             {
-                shuffledPlayers[i].PlayerRole = i < enemyCount ? "enemy" : "citizen";
+                // Elegir un índice aleatorio entre 0 y el número total de jugadores - 1
+                int randomIndex = _random.Next(game.Players.Count);
+                // Si el jugador elegido no es enemigo, convertirlo
+                if (game.Players[randomIndex].PlayerRole != "enemy")
+                {
+                    game.Players[randomIndex].PlayerRole = "enemy";
+                    enemiesAssigned++;
+                }
             }
-            game.Players = shuffledPlayers;
+
+            // Asignar rol de "citizen" a todos los que no sean enemigos
+            foreach (var player in game.Players.Where(p => p.PlayerRole != "enemy"))
+            {
+                player.PlayerRole = "citizen";
+            }
         }
 
-        private Round CreateNewRound(Game game)
+        private async Task ResetPlayerVotesAsync(Game game)
         {
+            foreach (var player in game.Players)
+            {
+                player.PlayerVote = "none";
+                player.PlayerAction = "none";
+            }
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
+        }
+        private async Task<Round> CreateNewRoundAsync(Game game, int currentRoundNumber)
+        {
+            if (currentRoundNumber > 0)
+            {
+                await ResetPlayerVotesAsync(game);
+            }
             var leader = game.Players[new Random().Next(game.Players.Count)];
-            return new Round
+            var newRound = new Round
             {
                 status = "waiting-on-leader",
                 phase = "vote1",
@@ -198,14 +248,18 @@ namespace Core.Models.Business
                 gameId = game.GameId,
                 group = new List<string>(),
                 votes = new List<bool>(),
-                id = Guid.NewGuid().ToString()
+                actions = new List<bool>(),
+                id = Guid.NewGuid().ToString(),
+                roundCount = currentRoundNumber + 1
             };
+            await _roundsCollection.InsertOneAsync(newRound);
+            return newRound;
 
         }
-        public RoundsResponse GetRounds(string gameId, string player, string password)
+        public async Task<RoundsResponse> GetRoundsAsync(string gameId, string player, string password)
         {
 
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new RoundsResponse { status = 404, msg = "The specified resource was not found" };
@@ -216,12 +270,16 @@ namespace Core.Models.Business
                 return new RoundsResponse { status = 403, msg = "Not part of the game" };
             }
 
-            // Validación de contraseña solo si el juego tiene contraseña y el jugador proporciona una
-            if (!string.IsNullOrEmpty(game.GamePassword) && !string.IsNullOrEmpty(password))
+            // Validación de contraseña
+            if (!string.IsNullOrEmpty(game.GamePassword))
             {
-                if (game.GamePassword != password)
+                if (string.IsNullOrEmpty(password) || game.GamePassword != password)
                 {
-                    return new RoundsResponse { status = 401, msg = "Invalid credentials" };
+                    return new RoundsResponse
+                    {
+                        status = 401,
+                        msg = "Invalid credentials"
+                    };
                 }
             }
             // Verificar si el juego está en estado "lobby"
@@ -236,10 +294,10 @@ namespace Core.Models.Business
                 };
             }
 
-            var rounds = _roundsCollection
+            var rounds = await _roundsCollection
                 .Find(r => r.gameId == gameId)
                 .SortByDescending(r => r.createdAt)
-                .ToList();
+                .ToListAsync();
 
             var dataRounds = rounds.Select(r => new DataRounds
             {
@@ -263,9 +321,9 @@ namespace Core.Models.Business
             };
         }
 
-        public SRoundsResponse GetRoundDetail(string gameId, string roundId, string player, string password)
+        public async Task<SRoundsResponse> GetRoundDetailAsync(string gameId, string roundId, string player, string password)
         {
-            var game = _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefault();
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
             if (game == null)
             {
                 return new SRoundsResponse
@@ -297,13 +355,13 @@ namespace Core.Models.Business
                 }
             }
 
-            var round = _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefault();
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
             if (round == null)
             {
                 return new SRoundsResponse
                 {
                     status = 404,
-                    msg = "Invalid Round Id",
+                    msg = "The specified round was not found",
                     data = { },
                     others = []
                 };
@@ -325,10 +383,663 @@ namespace Core.Models.Business
             return new SRoundsResponse
             {
                 status = 200,
-                msg = "Round found",
+                msg = "Results found",
                 data = dataRound
             };
         }
 
+
+        private async Task<ResponseGameId> GetGameByIdAsync(string gameId, string player, string password)
+        {
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
+
+            if (game == null)
+            {
+                return new ResponseGameId
+                {
+                    status = 404,
+                    msg = "Game not found",
+                    data = null
+                };
+            }
+
+            if (!game.Players.Any(p => p.PlayerName == player))
+            {
+                return new ResponseGameId
+                {
+                    status = 403,
+                    msg = "Player not part of the game",
+                    data = null
+                };
+            }
+
+            if (!string.IsNullOrEmpty(game.GamePassword) && game.GamePassword != password)
+            {
+                return new ResponseGameId
+                {
+                    status = 401,
+                    msg = "Invalid credentials",
+                    data = null
+                };
+            }
+
+            // Mapeo a DataCreate
+            var data = new DataCreate
+            {
+                id = game.GameId, // Cambia GameId por id
+                name = game.GameName, // Cambia GameName por name
+                owner = game.GameOwner, // Asigna el propietario
+                status = game.GameStatus.ToString(), // Convierte el estado a string
+                password = !string.IsNullOrEmpty(game.GamePassword), // Indica si hay contraseña
+                currentRound = game.CurrentRound,
+                createdAt = game.CreatedAt,
+                updatedAt = game.UpdatedAt,
+                players = game.Players.Select(p => p.PlayerName).ToList(), // Lista de jugadores
+                enemies = game.Enemies // Asigna enemigos, si corresponde
+            };
+
+            return new ResponseGameId
+            {
+                status = 200,
+                msg = "Game found",
+                data = data
+            };
+        }
+
+
+        // Método para proponer un grupo
+        public async Task<SRoundsResponse> ProposeGroupAsync(string gameId, string roundId, GroupRequest groupRequest, string password, string player)
+        {
+            // Validación del jugador
+            if (string.IsNullOrEmpty(player) || player.Length < 3 || player.Length > 20)
+            {
+                return new SRoundsResponse
+                {
+                    status = 400,
+                    msg = "Invalid or missing player name",
+                    data = null,
+                    others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 400, msg = "Invalid or missing player name" }
+                }
+                };
+            }
+
+            // Validación del grupo
+            if (groupRequest?.group == null || !groupRequest.group.Any())
+            {
+                return new SRoundsResponse
+                {
+                    status = 400,
+                    msg = "Invalid or missing group",
+                    data = null,
+                    others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 400, msg = "Invalid or missing group" }
+                }
+                };
+            }
+
+            // Verificar existencia del juego
+            var gameResponse = await GetGameByIdAsync(gameId, player, password);
+            if (gameResponse.status != 200 || gameResponse.data == null)
+            {
+                return new SRoundsResponse
+                {
+                    status = gameResponse.status,
+                    msg = gameResponse.msg,
+                    data = null,
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = gameResponse.status, msg = gameResponse.msg }
+            }
+                };
+            }
+
+            // Obtener detalles de la ronda
+            var roundResponse = await GetRoundDetailAsync(gameId, roundId, player, password);
+            if (roundResponse.status != 200 || roundResponse.data == null)
+            {
+                return roundResponse;
+            }
+
+            var round = roundResponse.data;
+
+            // Validar estado de la ronda y líder
+            if (round.status != "waiting-on-leader")
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "This action is not allowed at this time",
+                    data = null
+                };
+            }
+
+            // Verificar si ya se propuso un grupo
+            if (round.group != null && round.group.Any())
+            {
+                return new SRoundsResponse
+                {
+                    status = 409,
+                    msg = "Asset already exists",
+                    data = null
+                };
+            }
+
+            var roundBD = await _roundsCollection.Find(r => r.gameId == gameId && r.id == round.id).SingleOrDefaultAsync();
+            int requiredGroupSize = GetRequiredGroupSize(gameResponse.data.players.Count(), roundBD.roundCount);
+            if (requiredGroupSize < 0)
+            {
+                return new SRoundsResponse
+                {
+                    status = 500,
+                    msg = "An error occurred while processing the request",
+                    data = null,
+                    others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 500, msg = "Internal server error" }
+                }
+                };
+            }
+            if (groupRequest.group.Count != requiredGroupSize)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = $"Requires a group of {requiredGroupSize} members",
+                    data = null
+                };
+            }
+            var distinctMembers = groupRequest.group.Distinct().ToList();
+            if (distinctMembers.Count != groupRequest.group.Count)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "Invalid or missing group",
+                    data = null,
+                    others = new List<ErrorDetail>
+        {
+            new ErrorDetail { status = 428, msg = "Group members must be different from each other" }
+        }
+                };
+            }
+
+            // Validar que todos los miembros del grupo existan
+            var invalidPlayers = groupRequest.group.Where(member => !gameResponse.data.players.Contains(member)).ToList();
+            if (invalidPlayers.Any())
+            {
+                return new SRoundsResponse
+                {
+                    status = 409,
+                    msg = $"Invalid group members",
+                    data = null
+                };
+            }
+            // llegar aqui ya paso por todos los filtros
+            return await AddGroupRounAsync(gameId, roundId, groupRequest, player, password);
+        }
+        private async Task<SRoundsResponse> AddGroupRounAsync(string gameId, string roundId, GroupRequest groupRequest, string player, string password)
+        {
+            try
+            {
+                // Obtener la ronda actual
+                var round = await _roundsCollection.Find(r => r.id == roundId && r.gameId == gameId).FirstOrDefaultAsync();
+                if (round == null)
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 404,
+                        msg = "Round not found",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 404, msg = "Round not found" }
+                }
+                    };
+                }
+
+                // Validar que el jugador sea el líder de la ronda
+                if (round.leader != player)
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 409,
+                        msg = "Only the round leader can propose groups",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 403, msg = "Only the round leader can propose groups" }
+                }
+                    };
+                }
+
+                // Validar que la ronda esté en el estado correcto
+                if (round.status != "waiting-on-leader")
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 409,
+                        msg = "Asset already exists",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 409, msg = "Round is not in the correct state for group proposal" }
+                }
+                    };
+                }
+                // Definir la actualización
+                var update = Builders<Round>.Update
+                    .Set(r => r.group, groupRequest.group)
+                    .Set(r => r.status, "voting")
+                    .Set(r => r.votes, new List<bool>())  // Inicializar los votos
+                    .Set(r => r.updatedAt, DateTime.UtcNow);
+
+                // Ejecutar la actualización
+                var updateResult = await _roundsCollection.UpdateOneAsync(
+                    r => r.id == roundId && r.gameId == gameId,
+                    update
+                );
+
+                if (updateResult.ModifiedCount > 0)
+                {
+                    return await GetRoundDetailAsync(gameId, roundId, player, password);
+                }
+                else
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 500,
+                        msg = "Failed to update round",
+                        data = null,
+                        others = new List<ErrorDetail>
+                {
+                    new ErrorDetail { status = 500, msg = "Failed to update the round in the database" }
+                }
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new SRoundsResponse
+                {
+                    status = 500,
+                    msg = "An error occurred while updating the round",
+                    data = null,
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 500, msg = ex.Message }
+            }
+                };
+            }
+        }
+
+        private int GetRequiredGroupSize(int playerCount, int currentRound)
+        {
+            // Validar el número de jugadores y si hay algo mal entonces -1
+            if (playerCount < MINIMUM_PLAYERS || playerCount > MAXIMUM_PLAYERS)
+            {
+                return -1;
+            }
+
+            // Validar el número de ronda (las rondas van de 1 a 5)
+            if (currentRound < 1 || currentRound > 5)
+            {
+                return -1;
+            }
+
+            int playerIndex = playerCount - MINIMUM_PLAYERS;
+            int roundIndex = currentRound - 1;
+
+            return GROUP_SIZES[playerIndex, roundIndex];
+        }
+
+
+        public async Task<SRoundsResponse> VoteAsync(string gameId, string roundId, string player, string password, bool vote)
+        {
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
+            if (game == null)
+            {
+                return new SRoundsResponse { status = 404, msg = "The specified resource was not found" };
+            }
+            if (game.GameStatus == GameStatus.ended || game.GameStatus == GameStatus.lobby)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "This action is not allowed at this time",
+                    data = null
+                };
+            }
+
+            var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
+            if (currentPlayer == null)
+            {
+                return new SRoundsResponse { status = 403, msg = "Not part of the game" };
+            }
+
+            // Validación de si el jugador ya votó
+            if (currentPlayer.PlayerVote != "none")
+            {  // Asumiendo que 'none' es un string que representa que no ha votado
+                return new SRoundsResponse { status = 409, msg = "Player has already voted", data = null };
+            }
+
+            // Validación de contraseña
+            if (!string.IsNullOrEmpty(game.GamePassword))
+            {
+                if (string.IsNullOrEmpty(password) || game.GamePassword != password)
+                {
+                    return new SRoundsResponse { status = 401, msg = "Invalid credentials" };
+                }
+
+            }
+
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
+
+            if (game.GameStatus != GameStatus.rounds || round.status != "voting")
+            {
+                return new SRoundsResponse { status = 428, msg = "This action is not allowed at this time", data = null };
+            }
+
+            if (round == null)
+            {
+                return new SRoundsResponse { status = 404, msg = "Round not found", data = null };
+            }
+
+            if (round.votes.Count >= game.Players.Count)
+            {
+                return new SRoundsResponse { status = 409, msg = "Votes already cast", data = null };
+            }
+
+            currentPlayer.PlayerVote = vote.ToString();
+
+            var playerIndex = game.Players.FindIndex(p => p.PlayerName == player);
+            if (playerIndex != -1)
+            {
+                game.Players[playerIndex] = currentPlayer;
+            }
+
+            await _gamesCollection.ReplaceOneAsync(game => game.GameId == gameId, game);
+            round.votes.Add(vote);
+
+            // Si ya han votado todos los jugadores, determinar el resultado
+            if (round.votes.Count >= game.Players.Count)
+            {
+                var resultRound = await determineResultVotingAsync(round, game);
+                game.Players.ForEach(p => p.PlayerVote = "none");
+                await _gamesCollection.ReplaceOneAsync(game => game.GameId == gameId, game);
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId, resultRound);
+            }
+            else
+            {
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId, round);
+            }
+
+            round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
+
+            var dataRound = new DataRounds
+            {
+                id = round.id,
+                leader = round.leader,
+                status = round.status,
+                result = round.result,
+                phase = round.phase,
+                group = round.group,
+                votes = round.votes.Select(v => (bool)v).ToList(),
+                createdAt = round.createdAt,
+                updatedAt = round.updatedAt
+            };
+
+            return new SRoundsResponse
+            {
+                status = 200,
+                msg = "Round found",
+                data = dataRound
+            };
+        }
+        private async Task<Round> determineResultVotingAsync(Round round, Game game)
+        {
+            var votesTrue = round.votes.Count(v => v == true);
+            var votesFalse = round.votes.Count(v => v == false);
+
+            if (votesTrue == votesFalse || votesFalse > votesTrue)
+            {
+                round.status = "waiting-on-leader";
+                switch (round.phase)
+                {
+                    case "vote1":
+                        round.votes = new List<bool>();
+                        round.group = new List<string>();
+                        round.phase = "vote2";
+                        break;
+                    case "vote2":
+                        round.votes = new List<bool>();
+                        round.group = new List<string>();
+                        round.phase = "vote3";
+                        break;
+                    case "vote3":
+                        round.status = "ended";
+                        round.result = "enemies";
+                        await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
+
+                        if (await CheckGameEndConditionAsync(game, round.result))
+                        {
+                            await EndGameAsync(game, round.result, round);
+                        }
+                        else
+                        {
+                            var newRound = await CreateNewRoundAsync(game, round.roundCount);
+                            game.CurrentRound = newRound.id;
+                            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
+                        }
+                        break;
+                }
+            }
+            else
+            {
+                round.status = "waiting-on-group";
+            }
+            round.updatedAt = DateTime.UtcNow;
+            await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
+
+            return round;
+        }
+
+        public async Task<SRoundsResponse> SubmitActionAsync(string gameId, string roundId, string player, string password, bool action)
+        {
+            // Verificaciones iniciales
+            var game = await _gamesCollection.Find(g => g.GameId == gameId).SingleOrDefaultAsync();
+            if (game == null)
+            {
+                return new SRoundsResponse
+                {
+                    status = 404,
+                    msg = "The specified game was not found",
+                    data = null
+                };
+            }
+            if (game.GameStatus == GameStatus.ended || game.GameStatus == GameStatus.lobby)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "This action is not allowed at this time",
+                    data = null
+                };
+            }
+
+            // Verificar contraseña
+            if (!string.IsNullOrEmpty(game.GamePassword))
+            {
+                if (string.IsNullOrEmpty(password) || game.GamePassword != password)
+                {
+                    return new SRoundsResponse
+                    {
+                        status = 401,
+                        msg = "Invalid credentials",
+                        data = null
+                    };
+                }
+            }
+
+            // Verificar jugador
+            var currentPlayer = game.Players.FirstOrDefault(p => p.PlayerName == player);
+            if (currentPlayer == null)
+            {
+                return new SRoundsResponse
+                {
+                    status = 403,
+                    msg = "Player is not part of the game",
+                    data = null
+                };
+            }
+
+            // Verificar ronda
+            var round = await _roundsCollection.Find(r => r.gameId == gameId && r.id == roundId).SingleOrDefaultAsync();
+            if (round == null)
+            {
+                return new SRoundsResponse
+                {
+                    status = 404,
+                    msg = "The specified round was not found",
+                    data = null
+                };
+            }
+
+            // Validaciones de estado y reglas
+            if (round.status != "waiting-on-group")
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = "This action is not allowed at this time",
+                    data = null
+                };
+            }
+
+
+            int requiredGroupSize = GetRequiredGroupSize(game.Players.Count, round.roundCount);
+            if (round.group.Count != requiredGroupSize)
+            {
+                return new SRoundsResponse
+                {
+                    status = 428,
+                    msg = $"The group size must be {requiredGroupSize}",
+                    data = null
+                };
+            }
+
+            if (!round.group.Contains(player))
+            {
+                return new SRoundsResponse
+                {
+                    status = 403,
+                    msg = "You cannot contribute in this round",
+                    data = null
+                };
+            }
+
+            if (currentPlayer.PlayerAction != "none")
+            {
+                return new SRoundsResponse
+                {
+                    status = 409,
+                    msg = "You have already contributed",
+                    data = null
+                };
+            }
+
+            if (!action && currentPlayer.PlayerRole != "enemy")
+            {
+                return new SRoundsResponse
+                {
+                    status = 403,
+                    msg = "You cannot contribute in this round",
+                    data = null
+                };
+            }
+
+            // Registrar la acción del jugador
+            var playerIndex = game.Players.FindIndex(p => p.PlayerName == player);
+            game.Players[playerIndex].PlayerAction = action ? "collaborate" : "sabotage";
+            round.actions.Add(action);
+
+            // Actualizar timestamps
+            round.updatedAt = DateTime.UtcNow;
+            game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Procesar completitud de la ronda
+            if (IsGroupActionsComplete(round))
+            {
+                // Determinar resultado
+                round.status = "ended";
+                round.result = round.actions.Contains(false) ? "enemies" : "citizens";
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId && r.gameId == gameId, round);
+
+                // Verificar fin del juego
+                if (await CheckGameEndConditionAsync(game, round.result))
+                {
+                    await EndGameAsync(game, round.result, round);
+                }
+                else
+                {
+                    // Solo crear nueva ronda si no hay ganador
+                    var newRound = await CreateNewRoundAsync(game, round.roundCount);
+                    game.CurrentRound = newRound.id;
+                    game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                    await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
+                }
+            }
+            else
+            {
+                // Si la ronda no está completa, actualizamos ambos documentos
+                await _roundsCollection.ReplaceOneAsync(r => r.id == roundId && r.gameId == gameId, round);
+                await _gamesCollection.ReplaceOneAsync(g => g.GameId == gameId, game);
+            }
+
+            return await GetRoundDetailAsync(gameId, roundId, player, password);
+        }
+
+        private async Task<bool> CheckGameEndConditionAsync(Game game, string winningTeam)
+        {
+            // Filtrar solo las rondas completadas hasta la ronda actual
+            var filter = Builders<Round>.Filter.And(
+                Builders<Round>.Filter.Eq(r => r.gameId, game.GameId),
+                Builders<Round>.Filter.Eq(r => r.result, winningTeam),
+                Builders<Round>.Filter.Eq(r => r.status, "ended")
+            );
+
+            long victories = await _roundsCollection.CountDocumentsAsync(filter);
+
+            if (victories >= 3)
+            {
+                // Si encontramos que hay un ganador, asegurémonos de que el juego se marque como terminado
+                if (game.GameStatus != GameStatus.ended)
+                {
+                    game.GameStatus = GameStatus.ended;
+                    await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        // Método para terminar el juego
+        private async Task EndGameAsync(Game game, string winningTeam, Round round)
+        {
+            game.GameStatus = GameStatus.ended;
+            round.result = winningTeam;
+            round.status = "ended";
+            round.updatedAt = DateTime.UtcNow;
+            game.UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            await _gamesCollection.ReplaceOneAsync(g => g.GameId == game.GameId, game);
+            await _roundsCollection.ReplaceOneAsync(r => r.id == round.id && r.gameId == game.GameId, round);
+        }
+
+        //Función para verificar si todos los jugadores del grupo han votado
+        private bool IsGroupActionsComplete(Round round) { return round.actions.Count == round.group.Count; }
     }
 }
+

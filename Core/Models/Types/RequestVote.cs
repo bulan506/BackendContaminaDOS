@@ -3,7 +3,7 @@ namespace Core.Models.Types
 {
     public class RequestVote
     {
-        public bool? vote { get; set; }
+        public object vote { get; set; }
     }
 
 }

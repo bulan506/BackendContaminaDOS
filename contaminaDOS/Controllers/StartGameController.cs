@@ -16,7 +16,7 @@ namespace contaminaDOS.Controllers
         }
 
         [HttpHead("{gameId}/start")]
-        public IActionResult StartGame(
+        public async Task<IActionResult> StartGame(
             [FromRoute] string gameId,
             [FromHeader(Name = "player")] string player,
             [FromHeader(Name = "password")] string password = null)
@@ -26,7 +26,7 @@ namespace contaminaDOS.Controllers
                 return CreateErrorResponse("Player is required", 400);
             }
 
-            var result = _gameService.StartGame(gameId, player, password);
+            var result = await _gameService.StartGameAsync(gameId, player, password);
 
             return result.status switch
             {

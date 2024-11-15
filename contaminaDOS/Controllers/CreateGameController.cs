@@ -29,6 +29,10 @@ namespace contaminaDOS.controllers
                 return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
             }
 
+            if(requestGame.name.Length < 3 || requestGame.name.Length > 20){
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field name must be between 3 and 20 characters long" });
+            }
+
             var result = await _gameCreationService.CreateGameAsync(requestGame);
 
             if (result.status == 409)
@@ -99,6 +103,13 @@ namespace contaminaDOS.controllers
             // Establecer valores por defecto si no se proporcionan
             int actualPage = page ?? 0;
             int actualLimit = limit ?? 50;
+
+            if(!string.IsNullOrEmpty(name)){
+                if(name.Length < 3 || name.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "The field name must be between 3 and 20 characters long" });
+                }
+            }
+
             var result = await _gameCreationService.SearchGamesAsync(name, status, actualPage, actualLimit);
 
             return Ok(result);

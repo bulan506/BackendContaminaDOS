@@ -42,7 +42,7 @@ namespace contaminaDOS.Controllers
 
         private IActionResult CreateErrorResponse(string message, int statusCode)
         {
-            Response.Headers.Add("x-msg", message);
+            Response.Headers.Add("X-msg", message);
             return StatusCode(statusCode);
         }
     }

@@ -60,12 +60,6 @@ Storage: Block Storage Only
 - Docker Container Environment
 - MongoDB Database
 
-### 📊 Architecture Diagram
-
-Infrastructure setup.
-
-![Architecture Diagram](/images/diagramOCI_Infrastructure.png)
-
 ## 📋 Prerequisites
 
 - Oracle Linux 8
@@ -78,7 +72,7 @@ Infrastructure setup.
 - MongoDB database
 - Containerized API
 - NGINX reverse proxy
-- SSL support
+- SSL support via Certbot
 - Auto-restart capability
 - Data persistence
 - Docker network isolation
@@ -121,16 +115,14 @@ sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 docker-compose --version
 ```
 
-## 🚀 Deployment
-
-### 1. Project Setup
+### 5. Project Setup
 
 ```bash
 sudo mkdir -p /opt/contaminados
 cd /opt/contaminados
 ```
 
-### 2. Docker Compose Configuration
+### 6. Docker Compose Configuration
 
 Create `docker-compose.yml`:
 
@@ -172,23 +164,28 @@ volumes:
     driver: local
 ```
 
-### 3. SSL Configuration
+### 7. SSL Configuration
 
 ```bash
-# Create SSL directory
-sudo mkdir -p /etc/nginx/ssl
+# Install EPEL repository
+sudo dnf install epel-release -y
+sudo dnf config-manager --set-enabled ol8_developer_EPEL
+sudo dnf makecache
 
-# Generate self-signed certificate
-sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
--keyout /etc/nginx/ssl/nginx.key \
--out /etc/nginx/ssl/nginx.crt
+# Install Certbot and NGINX plugin
+sudo dnf install certbot python3-certbot-nginx -y
+sudo dnf install -y setroubleshoot-server setools-console
+sudo setsebool -P httpd_can_network_connect 1
 
-# Set permissions
-sudo chmod 400 /etc/nginx/ssl/nginx.key
-sudo chmod 444 /etc/nginx/ssl/nginx.crt
+# Configure Firewall
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+# Generate SSL certificate using Certbot
+sudo certbot --nginx -d www.grupoe.oci.meseguercr.com
 ```
 
-### 4. NGINX Configuration
+### 8. NGINX Configuration
 
 Create `/etc/nginx/conf.d/contaminados.conf`:
 
@@ -196,7 +193,7 @@ Create `/etc/nginx/conf.d/contaminados.conf`:
 # HTTP Server
 server {
     listen 80;
-    server_name YOUR_IP;
+    server_name www.grupoe.oci.meseguercr.com;
 
     location / {
         proxy_pass http://localhost:8000;
@@ -214,17 +211,13 @@ server {
 # HTTPS Server
 server {
     listen 443 ssl;
-    server_name YOUR_IP;
+    server_name www.grupoe.oci.meseguercr.com;
 
-    ssl_certificate /etc/nginx/ssl/nginx.crt;
-    ssl_certificate_key /etc/nginx/ssl/nginx.key;
+    ssl_certificate /etc/letsencrypt/live/www.grupoe.oci.meseguercr.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.grupoe.oci.meseguercr.com/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
     location / {
         proxy_pass http://localhost:8000;
@@ -244,7 +237,7 @@ server {
 }
 ```
 
-### 5. Security Configuration
+### 9. Security Configuration
 
 ```bash
 # Configure SELinux
@@ -257,14 +250,14 @@ sudo firewall-cmd --permanent --add-service=https
 sudo firewall-cmd --reload
 ```
 
-### 6. Start Services
+### 10. Start Services
 
 ```bash
 # Start containers
 cd /opt/contaminados
 sudo docker-compose up -d
-
 # Restart NGINX
+sudo firewall-cmd --reload
 sudo systemctl restart nginx
 ```
 
@@ -305,16 +298,16 @@ sudo docker-compose down -v
 
 ## ⚠️ Important Notes
 
-1. Replace `YOUR_IP` in the NGINX configuration with your actual server IP
-2. The default MongoDB port is mapped to 27010
-3. The API is accessible on port 8000
-4. SSL certificate is self-signed (consider using Let's Encrypt for production)
+1. Default MongoDB port is mapped to 27010
+2. The API is accessible on port 8000
+3. SSL certificates are managed by Certbot
+4. Certificate renewal is handled automatically
 5. Logs are available via `docker-compose logs`
 
 ## 🔒 Security Considerations
 
-- Change default ports if needed
-- Use strong SSL certificates in production
 - Regularly update containers and system
 - Monitor logs for suspicious activity
 - Implement proper backup strategies
+- Keep SSL certificates up to date
+- Monitor certificate renewal status

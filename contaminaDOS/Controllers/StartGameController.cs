@@ -21,9 +21,22 @@ namespace contaminaDOS.Controllers
             [FromHeader(Name = "player")] string player,
             [FromHeader(Name = "password")] string password = null)
         {
-            if (string.IsNullOrEmpty(player))
-            {
+            if(string.IsNullOrEmpty(gameId)){
+                return CreateErrorResponse("GameId is required", 400);
+            }
+
+            if (!string.IsNullOrEmpty(player)){
+                if(player.Length < 3 || player.Length > 20){
+                    return CreateErrorResponse("Invalid player name", 400);
+                }
+            }else{
                 return CreateErrorResponse("Player is required", 400);
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return CreateErrorResponse("Invalid password", 400);
+                }
             }
 
             var result = await _gameService.StartGameAsync(gameId, player, password);

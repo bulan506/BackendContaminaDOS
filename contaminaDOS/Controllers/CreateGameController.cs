@@ -30,7 +30,19 @@ namespace contaminaDOS.controllers
             }
 
             if(requestGame.name.Length < 3 || requestGame.name.Length > 20){
-                return BadRequest(new ErrorResponse { status = 400, msg = "The field name must be between 3 and 20 characters long" });
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid or missing game name" });
+            }
+
+            if(!string.IsNullOrEmpty(requestGame.owner)){
+                if(requestGame.owner.Length < 3 || requestGame.owner.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid owner" });
+                }
+            }
+
+            if(!string.IsNullOrEmpty(requestGame.password)){
+                if(requestGame.password.Length < 3 || requestGame.password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
             }
 
             var result = await _gameCreationService.CreateGameAsync(requestGame);
@@ -74,6 +86,12 @@ namespace contaminaDOS.controllers
                 return BadRequest(errorResponse);
             }
 
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
+            }
+
             var gameResponse = await _gameCreationService.GetGameAsync(gameId, player, password);
 
             if (gameResponse.status == 404)
@@ -106,7 +124,7 @@ namespace contaminaDOS.controllers
 
             if(!string.IsNullOrEmpty(name)){
                 if(name.Length < 3 || name.Length > 20){
-                    return BadRequest(new ErrorResponse { status = 400, msg = "The field name must be between 3 and 20 characters long" });
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid game name" });
                 }
             }
 

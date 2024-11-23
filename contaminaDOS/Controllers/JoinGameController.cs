@@ -26,15 +26,22 @@ namespace contaminaDOS.Controllers
             var player = playerFromHeader ?? requestBody?.Player;
             var password = passwordFromHeader;
 
-            // Validación: Si el jugador no está especificado, se requiere
-            if (string.IsNullOrEmpty(player))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    status = 400,
-                    msg = "Player is required",
-                    data = { }
-                });
+            if(string.IsNullOrEmpty(gameId)){
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field gameId cannot be empty" });
+            }
+
+            if(!string.IsNullOrEmpty(player)){
+                if(player.Length < 3 || player.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid player name" });
+                }
+            }else{
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field player cannot be empty" });
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
             }
 
             // Lógica de unión al juego usando el servicio

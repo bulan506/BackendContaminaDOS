@@ -44,6 +44,18 @@ namespace contaminaDOS.Controllers
                 });
             }
 
+            if(!string.IsNullOrEmpty(player)){
+                if(player.Length < 3 || player.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid player name" });
+                }
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
+            }
+
             // Llamada al servicio para procesar la acción del jugador
             var result = await _gameService.SubmitActionAsync(gameId, roundId, player, password, action);
 

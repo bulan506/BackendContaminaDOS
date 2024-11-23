@@ -55,7 +55,7 @@ namespace contaminaDOS.Controllers
 
         private IActionResult CreateErrorResponse(string message, int statusCode)
         {
-            Response.Headers.Add("X-msg", message);
+            Response.Headers.Add("x-msg", message);
             return StatusCode(statusCode);
         }
     }

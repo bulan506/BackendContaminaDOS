@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: contenedorMongo
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - contaminados-net
+    ports:
+      - "27010:27017"
+
+  api:
+    image: bulan506/contaminados2024api:latest
+    container_name: contaminaDOS
+    restart: always
+    depends_on:
+      - mongodb
+    environment:
+      - DB_CONNECTION_STRING=mongodb://mongodb:27017
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - contaminados-net
+    ports:
+      - "8000:8080"
+
+networks:
+  contaminados-net:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local

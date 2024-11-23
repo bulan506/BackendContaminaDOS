@@ -21,20 +21,27 @@ namespace contaminaDOS.Controllers
             [FromHeader(Name = "player")] string player,
             [FromHeader(Name = "password")] string password = null)
         {
-            if(string.IsNullOrEmpty(gameId)){
+            if (string.IsNullOrEmpty(gameId))
+            {
                 return CreateErrorResponse("GameId is required", 400);
             }
 
-            if (!string.IsNullOrEmpty(player)){
-                if(player.Length < 3 || player.Length > 20){
+            if (!string.IsNullOrEmpty(player))
+            {
+                if (player.Length < 3 || player.Length > 20)
+                {
                     return CreateErrorResponse("Invalid player name", 400);
                 }
-            }else{
+            }
+            else
+            {
                 return CreateErrorResponse("Player is required", 400);
             }
 
-            if(!string.IsNullOrEmpty(password)){
-                if(password.Length < 3 || password.Length > 20){
+            if (!string.IsNullOrEmpty(password))
+            {
+                if (password.Length < 3 || password.Length > 20)
+                {
                     return CreateErrorResponse("Invalid password", 400);
                 }
             }
@@ -55,7 +62,7 @@ namespace contaminaDOS.Controllers
 
         private IActionResult CreateErrorResponse(string message, int statusCode)
         {
-            Response.Headers.Add("x-msg", message);
+            Response.Headers.Add("X-msg", message);
             return StatusCode(statusCode);
         }
     }

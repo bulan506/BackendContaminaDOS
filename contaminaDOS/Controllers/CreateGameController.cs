@@ -24,25 +24,37 @@ namespace contaminaDOS.controllers
                 return BadRequest(new ErrorResponse { status = 400, msg = "The body cannot be empty" });
             }
 
-            if (string.IsNullOrEmpty(requestGame.name) || string.IsNullOrEmpty(requestGame.owner))
+            if (string.IsNullOrEmpty(requestGame.name) || string.IsNullOrWhiteSpace(requestGame.name))
             {
                 return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
             }
 
-            if(requestGame.name.Length < 3 || requestGame.name.Length > 20){
+            if (string.IsNullOrEmpty(requestGame.owner) || string.IsNullOrWhiteSpace(requestGame.owner))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
+            }
+
+            if (requestGame.name.Length < 3 || requestGame.name.Length > 20)
+            {
                 return BadRequest(new ErrorResponse { status = 400, msg = "Invalid or missing game name" });
             }
 
-            if(!string.IsNullOrEmpty(requestGame.owner)){
-                if(requestGame.owner.Length < 3 || requestGame.owner.Length > 20){
+            if (!string.IsNullOrEmpty(requestGame.owner))
+            {
+                if (requestGame.owner.Length < 3 || requestGame.owner.Length > 20)
+                {
                     return BadRequest(new ErrorResponse { status = 400, msg = "Invalid owner" });
                 }
             }
 
-            if(!string.IsNullOrEmpty(requestGame.password)){
-                if(requestGame.password.Length < 3 || requestGame.password.Length > 20){
-                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
-                }
+            if (requestGame.password != null && string.IsNullOrWhiteSpace(requestGame.password))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+            }
+
+            if (requestGame.password != null && (requestGame.password.Length < 3 || requestGame.password.Length > 20))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
             }
 
             var result = await _gameCreationService.CreateGameAsync(requestGame);
@@ -86,8 +98,10 @@ namespace contaminaDOS.controllers
                 return BadRequest(errorResponse);
             }
 
-            if(!string.IsNullOrEmpty(password)){
-                if(password.Length < 3 || password.Length > 20){
+            if (!string.IsNullOrEmpty(password))
+            {
+                if (password.Length < 3 || password.Length > 20)
+                {
                     return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
                 }
             }
@@ -121,9 +135,10 @@ namespace contaminaDOS.controllers
             // Establecer valores por defecto si no se proporcionan
             int actualPage = page ?? 0;
             int actualLimit = limit ?? 50;
-
-            if(!string.IsNullOrEmpty(name)){
-                if(name.Length < 3 || name.Length > 20){
+            if (!string.IsNullOrEmpty(name))
+            {
+                if (name.Length < 3 || name.Length > 20)
+                {
                     return BadRequest(new ErrorResponse { status = 400, msg = "Invalid game name" });
                 }
             }

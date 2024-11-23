@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Core.Models.Data;
 using Core.Models.Types;
 using MongoDB.Driver;
+using System.Text.RegularExpressions;
 
 namespace Core.Models.Business
 {
@@ -79,33 +80,6 @@ namespace Core.Models.Business
                 data = data
             };
         }
-
-        public async Task<ResponseAllGames> GetAllGamesAsync()
-        {
-            var games = await _gamesCollection.Find(_ => true).ToListAsync();
-
-            var dataListG = games.Select(g => new DataCreate
-            {
-                id = g.GameId,
-                name = g.GameName,
-                owner = g.GameOwner,
-                status = g.GameStatus.ToString(),
-                password = !string.IsNullOrEmpty(g.GamePassword), // Solo indicamos si hay contraseña o no
-                currentRound = g.CurrentRound,
-                createdAt = g.CreatedAt,
-                updatedAt = g.UpdatedAt,
-                players = g.Players.Select(p => p.PlayerName).ToList(),
-                enemies = g.Players.Where(p => p.PlayerRole == "enemy").Select(p => p.PlayerName).ToList()
-            }).ToList();
-
-            return new ResponseAllGames
-            {
-                status = 200,
-                msg = "Games found",
-                data = dataListG
-            };
-        }
-
         public async Task<ResponseCreate> GetGameAsync(string id, string player, string password = null)
         {
             var game = await _gamesCollection.Find(g => g.GameId == id).FirstOrDefaultAsync();
@@ -229,7 +203,12 @@ namespace Core.Models.Business
 
             if (!string.IsNullOrEmpty(name))
             {
-                filter = filter & Builders<Game>.Filter.Regex(g => g.GameName, new MongoDB.Bson.BsonRegularExpression(name, "i"));
+                if (name.EndsWith("\\"))
+                {
+                    name = name.TrimEnd('\\') + "\\\\";
+                }
+                string literalName = @"\Q" + name + @"\E";
+                filter = filter & Builders<Game>.Filter.Regex(g => g.GameName, new MongoDB.Bson.BsonRegularExpression(literalName, "i"));
             }
 
             if (!string.IsNullOrEmpty(status))

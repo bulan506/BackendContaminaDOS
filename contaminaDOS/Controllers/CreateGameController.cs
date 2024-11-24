@@ -129,12 +129,38 @@ namespace contaminaDOS.controllers
         public async Task<ActionResult<IEnumerable<Game>>> SearchGames(
      [FromQuery] string name = null,
      [FromQuery] string? status = null,
-     [FromQuery] int? page = null,
-     [FromQuery] int? limit = null)
+     [FromQuery] string page = null,
+     [FromQuery] string limit = null)
         {
-            // Establecer valores por defecto si no se proporcionan
-            int actualPage = page ?? 0;
-            int actualLimit = limit ?? 50;
+            if (!string.IsNullOrEmpty(page) && !int.TryParse(page, out _))
+            {
+                var errorResponse = new ErrorResponse
+                {
+                    status = 400,
+                    msg = "Invalid page number",
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 400, msg = "Invalid page number" }
+            }
+                };
+                return BadRequest(errorResponse);
+            }
+
+            if (!string.IsNullOrEmpty(limit) && !int.TryParse(limit, out _))
+            {
+                var errorResponse = new ErrorResponse
+                {
+                    status = 400,
+                    msg = "Invalid limit number",
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 400, msg = "Invalid limit number" }
+            }
+                };
+                return BadRequest(errorResponse);
+            }
+            int parsedPage = string.IsNullOrEmpty(page) ? 0 : int.Parse(page);
+            int parsedLimit = string.IsNullOrEmpty(limit) ? 50 : int.Parse(limit);
             if (!string.IsNullOrEmpty(name))
             {
                 if (name.Length < 3 || name.Length > 20)
@@ -143,7 +169,7 @@ namespace contaminaDOS.controllers
                 }
             }
 
-            var result = await _gameCreationService.SearchGamesAsync(name, status, actualPage, actualLimit);
+            var result = await _gameCreationService.SearchGamesAsync(name, status, parsedPage, parsedLimit);
 
             return Ok(result);
         }

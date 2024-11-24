@@ -2,9 +2,9 @@ name: publish
 
 on:
   push:
-    branches: ["fixess"]
+    branches: ["fixes"]
   pull_request:
-    branches: ["fixess"]
+    branches: ["fixes"]
 
 jobs:
   publish-UI:

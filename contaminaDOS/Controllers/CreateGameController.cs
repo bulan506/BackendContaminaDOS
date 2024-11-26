@@ -24,9 +24,37 @@ namespace contaminaDOS.controllers
                 return BadRequest(new ErrorResponse { status = 400, msg = "The body cannot be empty" });
             }
 
-            if (string.IsNullOrEmpty(requestGame.name) || string.IsNullOrEmpty(requestGame.owner))
+            if (string.IsNullOrEmpty(requestGame.name) || string.IsNullOrWhiteSpace(requestGame.name))
             {
                 return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
+            }
+
+            if (string.IsNullOrEmpty(requestGame.owner) || string.IsNullOrWhiteSpace(requestGame.owner))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "The fields name or owner cannot be empty" });
+            }
+
+            if (requestGame.name.Length < 3 || requestGame.name.Length > 20)
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid or missing game name" });
+            }
+
+            if (!string.IsNullOrEmpty(requestGame.owner))
+            {
+                if (requestGame.owner.Length < 3 || requestGame.owner.Length > 20)
+                {
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid owner" });
+                }
+            }
+
+            if (requestGame.password != null && string.IsNullOrWhiteSpace(requestGame.password))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+            }
+
+            if (requestGame.password != null && (requestGame.password.Length < 3 || requestGame.password.Length > 20))
+            {
+                return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
             }
 
             var result = await _gameCreationService.CreateGameAsync(requestGame);
@@ -70,6 +98,14 @@ namespace contaminaDOS.controllers
                 return BadRequest(errorResponse);
             }
 
+            if (!string.IsNullOrEmpty(password))
+            {
+                if (password.Length < 3 || password.Length > 20)
+                {
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
+            }
+
             var gameResponse = await _gameCreationService.GetGameAsync(gameId, player, password);
 
             if (gameResponse.status == 404)
@@ -93,13 +129,47 @@ namespace contaminaDOS.controllers
         public async Task<ActionResult<IEnumerable<Game>>> SearchGames(
      [FromQuery] string name = null,
      [FromQuery] string? status = null,
-     [FromQuery] int? page = null,
-     [FromQuery] int? limit = null)
+     [FromQuery] string page = null,
+     [FromQuery] string limit = null)
         {
-            // Establecer valores por defecto si no se proporcionan
-            int actualPage = page ?? 0;
-            int actualLimit = limit ?? 50;
-            var result = await _gameCreationService.SearchGamesAsync(name, status, actualPage, actualLimit);
+            if (!string.IsNullOrEmpty(page) && !int.TryParse(page, out _))
+            {
+                var errorResponse = new ErrorResponse
+                {
+                    status = 400,
+                    msg = "Invalid page number",
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 400, msg = "Invalid page number" }
+            }
+                };
+                return BadRequest(errorResponse);
+            }
+
+            if (!string.IsNullOrEmpty(limit) && !int.TryParse(limit, out _))
+            {
+                var errorResponse = new ErrorResponse
+                {
+                    status = 400,
+                    msg = "Invalid limit number",
+                    others = new List<ErrorDetail>
+            {
+                new ErrorDetail { status = 400, msg = "Invalid limit number" }
+            }
+                };
+                return BadRequest(errorResponse);
+            }
+            int parsedPage = string.IsNullOrEmpty(page) ? 0 : int.Parse(page);
+            int parsedLimit = string.IsNullOrEmpty(limit) ? 50 : int.Parse(limit);
+            if (!string.IsNullOrEmpty(name))
+            {
+                if (name.Length < 3 || name.Length > 20)
+                {
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid game name" });
+                }
+            }
+
+            var result = await _gameCreationService.SearchGamesAsync(name, status, parsedPage, parsedLimit);
 
             return Ok(result);
         }

@@ -41,6 +41,19 @@ namespace contaminaDOS.controllers
                     data = { }
                 });
             }
+
+            if(!string.IsNullOrEmpty(player)){
+                if(player.Length < 3 || player.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid player name" });
+                }
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
+            }
+
             var result = await _gameService.VoteAsync(gameId, roundId, player, password, vote);
             switch (result.status)
             {

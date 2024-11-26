@@ -23,6 +23,10 @@ namespace contaminaDOS.controllers
        [FromHeader(Name = "player")] string player = null,
        [FromHeader] string password = null)
         {
+            if(string.IsNullOrEmpty(gameId)){
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field gameId cannot be empty" });
+            }
+            
             // Validación del jugador
             if (string.IsNullOrEmpty(player) || player.Length < 3 || player.Length > 20)
             {
@@ -40,6 +44,12 @@ namespace contaminaDOS.controllers
                 }
             }
                 });
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
             }
 
             var roundsResponse = await _gameService.GetRoundsAsync(gameId, player, password);
@@ -60,6 +70,14 @@ namespace contaminaDOS.controllers
     [FromHeader(Name = "player")] string player = null,
     [FromHeader] string password = null)
         {
+            if(string.IsNullOrEmpty(gameId)){
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field gameId cannot be empty" });
+            }
+
+            if(string.IsNullOrEmpty(roundId)){
+                return BadRequest(new ErrorResponse { status = 400, msg = "The field roundId cannot be empty" });
+            }
+
             if (string.IsNullOrEmpty(player) || player.Length < 3 || player.Length > 20)
             {
                 return BadRequest(new ErrorResponse
@@ -68,6 +86,12 @@ namespace contaminaDOS.controllers
                     msg = "Invalid or missing player name",
                     data = null
                 });
+            }
+
+            if(!string.IsNullOrEmpty(password)){
+                if(password.Length < 3 || password.Length > 20){
+                    return BadRequest(new ErrorResponse { status = 400, msg = "Invalid password" });
+                }
             }
 
             var roundDetailResponse = await _gameService.GetRoundDetailAsync(gameId, roundId, player, password);
